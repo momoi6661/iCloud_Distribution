@@ -1,12 +1,12 @@
 // Package auth - UI 访问鉴权。
 //
-// 启动时通过 -token 或 HME_UI_TOKEN 设置访问口令:
-//   - 设置后: 除 /api/ui/login 外的所有 /api/* 请求需要有效会话 Cookie
-//   - 未设置: 跳过鉴权(仅限本地可信环境,启动时打警告日志)
+// 两种模式:
+//   1. 启动令牌模式: -token / HME_UI_TOKEN 提供静态口令 (适合自动化/Docker)
+//   2. 管理员账号模式 (默认): 首次访问 Web UI 时创建用户名+密码,
+//      凭证存 data/admin.json (bcrypt),改密码后旧会话全部失效
 //
 // 会话 Cookie 格式: "<unix_expiry>|<hmac_sha256(expiry, secret)>",
-// HttpOnly + SameSite=Strict,有效期 12 小时。secret 派生自访问口令,
-// 服务重启后所有会话失效(会话仅存在于签名的有效期声明中,无服务端状态)。
+// HttpOnly + SameSite=Strict,有效期 12 小时。
 package auth
 
 import (
@@ -28,22 +28,31 @@ const uiSessionTTL = 12 * time.Hour
 
 // UIAuth 校验 UI 会话 Cookie。
 type UIAuth struct {
-	secret []byte
+	secretFn func() []byte
 }
 
-// NewUIAuth 用访问口令创建校验器。token 为空时返回 nil (表示关闭鉴权)。
+// NewUIAuth 令牌模式: token 为空时返回 nil (表示关闭鉴权)。
 func NewUIAuth(token string) *UIAuth {
 	if token == "" {
 		return nil
 	}
 	sum := sha256.Sum256([]byte("hme-ui:" + token))
-	return &UIAuth{secret: sum[:]}
+	return &UIAuth{secretFn: func() []byte { return sum[:] }}
 }
 
-// CheckToken 校验用户提交的口令是否正确。
+// NewUIAuthFromCredentials 管理员账号模式: 密钥派生自存储的密码哈希,
+// 修改密码后旧会话自动失效。
+func NewUIAuthFromCredentials(creds *CredentialStore) *UIAuth {
+	return &UIAuth{secretFn: func() []byte {
+		sum := sha256.Sum256([]byte("hme-ui:" + creds.SessionSecret()))
+		return sum[:]
+	}}
+}
+
+// CheckToken 校验启动令牌 (仅令牌模式)。
 func (a *UIAuth) CheckToken(token string) bool {
 	want := sha256.Sum256([]byte("hme-ui:" + token))
-	return subtle.ConstantTimeCompare(want[:], a.secret) == 1
+	return subtle.ConstantTimeCompare(want[:], a.secretFn()) == 1
 }
 
 // IssueCookie 生成会话 Cookie 值并写回响应。
@@ -92,7 +101,7 @@ func (a *UIAuth) ValidRequest(r *http.Request) bool {
 
 // sign 计算 expiry 的 HMAC 签名。
 func (a *UIAuth) sign(expiry int64) string {
-	mac := hmac.New(sha256.New, a.secret)
+	mac := hmac.New(sha256.New, a.secretFn())
 	mac.Write([]byte(strconv.FormatInt(expiry, 10)))
 	return hex.EncodeToString(mac.Sum(nil))
 }

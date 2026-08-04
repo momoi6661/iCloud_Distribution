@@ -11,7 +11,7 @@ iCloud Hide My Email 多账号管理平台 —— 带 Web UI、交互式自动�
 - 📨 **邮件读取** —— IMAP（App 专用密码，优先）+ Web API（Cookie，回退）双路径；同时扫描收件箱与垃圾邮件文件夹；IMAP 连接池复用
 - 🔗 **分享链接** —— 为任意别名生成公开 token 链接，持链接者免登录只读查看该邮箱邮件，自动 30 秒轮询，可随时吊销
 - 👥 **多账号** —— 国区 (icloud.com.cn) / 国际区，支持 HTTP/SOCKS5 代理
-- 🔐 **UI 访问鉴权** —— 可选口令保护全部管理 API（HMAC 签名会话 Cookie）
+- 🔐 **UI 访问鉴权** —— 首跑创建管理员账号 (bcrypt)，HMAC 签名会话 Cookie；改密码旧会话全失效
 - 🎨 **现代 Web UI** —— React + Ant Design，明暗层次分明的邮件阅读体验
 - 🐳 **Docker 一键部署** —— 多阶段构建，单容器运行
 
@@ -20,12 +20,14 @@ iCloud Hide My Email 多账号管理平台 —— 带 Web UI、交互式自动�
 ### 方式一：Docker（推荐）
 
 ```bash
-git clone git@github.com:paipaiio/iCloud_Distribution.git
+git clone https://github.com/paipaiio/iCloud_Distribution.git
 cd iCloud_Distribution
-HME_UI_TOKEN=你的访问口令 docker compose up -d --build
+docker compose up -d --build
 ```
 
-打开 http://localhost:8081，输入口令登录。数据持久化在 `./data/`。
+打开 http://localhost:8081 —— **首次访问会引导你创建管理员用户名和密码**（bcrypt 存储在 `data/admin.json`），之后用它登录。数据持久化在 `./data/`。
+
+> 自动化场景也可以用静态口令跳过初始化：`HME_UI_TOKEN=xxx docker compose up -d --build`
 
 ### 方式二：本地构建
 
@@ -33,14 +35,14 @@ HME_UI_TOKEN=你的访问口令 docker compose up -d --build
 
 ```bash
 make build                    # 前端构建 + Go 单二进制（内嵌前端）
-./icloud_distribution -token 你的访问口令
+./icloud_distribution         # 首跑创建管理员账号
+# 或静态口令: ./icloud_distribution -token xxx
 ```
 
 ### 开发模式
 
 ```bash
 make dev                      # 一条命令：后端 :8081 + Vite 热更新 :5173
-make dev TOKEN=xxx            # 指定 UI 口令 (默认 dev123)
 ```
 
 ## 使用流程
@@ -120,9 +122,9 @@ go run ./cmd/hme-mail -account acc_xxx -imap -uid 3 -folder Junk
 ## 安全说明
 
 - iCloud 密码仅存在于内存中的登录会话（TTL 5 分钟），**不落盘**
-- `data/accounts.json`、`data/shares.json` 权限 0600，含敏感凭证，请妥善保护
+- `data/accounts.json`、`data/shares.json`、`data/admin.json` 权限 0600，含敏感凭证，请妥善保护
+- 管理员密码以 bcrypt 哈希存储；会话签名密钥派生自密码哈希，改密码后旧会话全部失效
 - 分享链接任何人持有即可读邮件（设计如此），只发给信任的人；可随时吊销
-- 建议始终设置 UI 访问口令（`-token` 或 `HME_UI_TOKEN`）
 
 ## 测试
 

@@ -14,13 +14,19 @@ import (
 // UI 访问鉴权
 // ====================================================================
 
-// uiMiddleware 校验 UI 会话 Cookie。未启用鉴权 (s.ui == nil) 时直接放行。
+// uiMiddleware 校验 UI 会话 Cookie。
 //
 // 鉴权失败的 401 带有 data.reason = "ui_auth_expired" 标记,
 // 前端只对带标记的 401 跳转登录页——业务接口的 401 (如 iCloud 登录失败)
 // 不应把用户踢出 UI 会话。
+//
+// 管理员账号未创建时 (首次部署) 暂时放行,等待 /api/ui/setup。
 func (s *Server) uiMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if s.creds != nil && !s.creds.Initialized() {
+			c.Next()
+			return
+		}
 		if s.ui != nil && !s.ui.ValidRequest(c.Request) {
 			c.JSON(http.StatusUnauthorized, apiResp{
 				Success: false,
@@ -35,20 +41,39 @@ func (s *Server) uiMiddleware() gin.HandlerFunc {
 }
 
 type uiLoginReq struct {
-	Token string `json:"token" binding:"required"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Token    string `json:"token"` // 令牌模式 (-token 启动) 时使用
 }
 
-// uiLogin 校验访问口令,成功则写入会话 Cookie。
+// uiLogin 校验登录,成功则写入会话 Cookie。
+// 令牌模式校验 token;管理员账号模式校验 username+password。
 func (s *Server) uiLogin(c *gin.Context) {
 	if s.ui == nil {
-		// 未启用鉴权,直接视为登录成功
 		ok(c, gin.H{"auth_required": false})
 		return
 	}
 
 	var req uiLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "参数错误: token 必填")
+		fail(c, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	// 管理员账号模式
+	if s.creds != nil && req.Username != "" {
+		if _, valid := s.creds.Verify(req.Username, req.Password); !valid {
+			fail(c, http.StatusUnauthorized, "用户名或密码错误")
+			return
+		}
+		s.ui.IssueCookie(c.Writer)
+		ok(c, gin.H{"auth_required": true})
+		return
+	}
+
+	// 令牌模式
+	if req.Token == "" {
+		fail(c, http.StatusBadRequest, "参数错误: 请输入用户名密码")
 		return
 	}
 	if !s.ui.CheckToken(req.Token) {
@@ -59,6 +84,33 @@ func (s *Server) uiLogin(c *gin.Context) {
 	ok(c, gin.H{"auth_required": true})
 }
 
+// uiSetup 首次部署时创建管理员账号 (仅管理员账号模式且未初始化)。
+func (s *Server) uiSetup(c *gin.Context) {
+	if s.creds == nil {
+		fail(c, http.StatusForbidden, "当前为令牌模式,不支持初始化设置")
+		return
+	}
+	if s.creds.Initialized() {
+		fail(c, http.StatusForbidden, "管理员账号已存在")
+		return
+	}
+
+	var req struct {
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: username, password 必填")
+		return
+	}
+	if err := s.creds.Setup(req.Username, req.Password); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.ui.IssueCookie(c.Writer)
+	ok(c, gin.H{"username": req.Username})
+}
+
 // uiLogout 清除会话 Cookie。
 func (s *Server) uiLogout(c *gin.Context) {
 	if s.ui != nil {
@@ -67,10 +119,12 @@ func (s *Server) uiLogout(c *gin.Context) {
 	ok(c, gin.H{"message": "已注销"})
 }
 
-// uiStatus 返回当前鉴权状态(前端据此决定是否跳转登录页)。
+// uiStatus 返回当前鉴权状态(前端据此决定渲染登录页/初始化页/主界面)。
 func (s *Server) uiStatus(c *gin.Context) {
 	ok(c, gin.H{
 		"auth_required": s.ui != nil,
+		"initialized":   s.creds == nil || s.creds.Initialized(),
+		"token_mode":    s.creds == nil,
 		"authenticated": s.ui == nil || s.ui.ValidRequest(c.Request),
 	})
 }

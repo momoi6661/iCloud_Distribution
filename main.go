@@ -58,9 +58,24 @@ func main() {
 		log.Fatalf("初始化分享存储失败: %v", err)
 	}
 
-	srv := server.New(mgr, logins, auth.NewUIAuth(uiToken), shares, server.StaticFS(), *debug)
+	// 鉴权: -token/HME_UI_TOKEN 为令牌模式; 否则为管理员账号模式 (首跑创建)
+	var ui *auth.UIAuth
+	var creds *auth.CredentialStore
+	if uiToken != "" {
+		ui = auth.NewUIAuth(uiToken)
+		log.Printf("鉴权模式: 启动令牌")
+	} else {
+		creds, err = auth.NewCredentialStore(abs)
+		if err != nil {
+			log.Fatalf("初始化凭证存储失败: %v", err)
+		}
+		ui = auth.NewUIAuthFromCredentials(creds)
+		log.Printf("鉴权模式: 管理员账号 (initialized=%v)", creds.Initialized())
+	}
 
-	log.Printf("HTTP 服务就绪 addr=%s auth=%v", *addr, uiToken != "")
+	srv := server.New(mgr, logins, ui, creds, shares, server.StaticFS(), *debug)
+
+	log.Printf("HTTP 服务就绪 addr=%s", *addr)
 	if err := srv.Run(*addr); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
 	}

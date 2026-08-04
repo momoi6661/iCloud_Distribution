@@ -51,9 +51,14 @@ func TestUIAuth_CookieRoundtrip(t *testing.T) {
 		t.Error("无 Cookie 请求不应通过校验")
 	}
 
-	// 篡改签名的 Cookie 应拒绝
+	// 篡改签名的 Cookie 应拒绝 (确定性翻转签名中段一个字符)
 	tampered := *cookies[0]
-	tampered.Value = tampered.Value[:len(tampered.Value)-2] + "00"
+	mid := len(tampered.Value) / 2
+	flip := byte('0')
+	if tampered.Value[mid] == '0' {
+		flip = '1'
+	}
+	tampered.Value = tampered.Value[:mid] + string(flip) + tampered.Value[mid+1:]
 	req2 := httptest.NewRequest("GET", "/api/accounts", nil)
 	req2.AddCookie(&tampered)
 	if a.ValidRequest(req2) {

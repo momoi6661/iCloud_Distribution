@@ -108,6 +108,8 @@ export interface BatchCreateResult {
 
 export interface UIStatus {
   auth_required: boolean
+  initialized: boolean
+  token_mode: boolean
   authenticated: boolean
 }
 
@@ -116,7 +118,10 @@ export interface UIStatus {
 export const api = {
   // UI 鉴权
   uiStatus: () => request<UIStatus>('GET', '/api/ui/status'),
-  uiLogin: (token: string) => request('POST', '/api/ui/login', { token }),
+  uiLogin: (req: { username?: string; password?: string; token?: string }) =>
+    request('POST', '/api/ui/login', req),
+  uiSetup: (username: string, password: string) =>
+    request('POST', '/api/ui/setup', { username, password }),
   uiLogout: () => request('POST', '/api/ui/logout'),
 
   // 账号

@@ -13,7 +13,7 @@ TOKEN ?= $(or $(HME_UI_TOKEN),dev123)
 
 dev: ## 开发模式: 后端 + Vite 热更新 (Ctrl+C 同时停止)
 	@trap 'kill 0' EXIT INT; \
-	go run . -debug -token $(TOKEN) & \
+	if [ -n "$(TOKEN)" ]; then go run . -debug -token $(TOKEN) & else go run . -debug & fi; \
 	cd web && npm run dev
 
 build: ## 构建单二进制 (含内嵌前端)

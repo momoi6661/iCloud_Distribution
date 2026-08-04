@@ -5,9 +5,10 @@ services:
     ports:
       - "8081:8081"
     environment:
-      # UI 访问口令,部署前必须修改 (也可用 .env 文件)
-      - HME_UI_TOKEN=${HME_UI_TOKEN:-change-me}
+      # 可选: 静态访问口令 (自动化场景)。不设置则为管理员账号模式,
+      # 首次访问 Web UI 时创建用户名+密码 (推荐)
+      - HME_UI_TOKEN=${HME_UI_TOKEN:-}
     volumes:
-      # accounts.json 持久化到宿主机 ./data
+      # accounts.json / shares.json / admin.json 持久化到宿主机 ./data
       - ./data:/app/data
     restart: unless-stopped
