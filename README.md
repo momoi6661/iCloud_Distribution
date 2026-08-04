@@ -133,6 +133,16 @@ go vet ./...
 go test -race ./...
 ```
 
+## 致谢
+
+SRP 认证与邮件协议部分实现参考了以下开源项目（均为 MIT 许可）：
+
+- [icloud-hme](https://github.com/xiaozhou26/icloud-hme) — HME 协议客户端（本项目前身）
+- [Go-iClient](https://github.com/Johnw7789/Go-iClient)、[icloud-photos-sync](https://github.com/steilerDev/icloud-photos-sync)、[pyicloud](https://github.com/picklepete/pyicloud) — iCloud 协议逆向参考
+
 ## 许可证
 
-MIT License
+[MIT License](LICENSE)
+
+> 免责声明：本项目仅用于学习与技术研究，与 Apple Inc. 无关。
+> 使用本项目访问 iCloud 服务时，请遵守 Apple 的服务条款。
