@@ -1,0 +1,9 @@
+# Docker 构建上下文排除
+.git/
+data/
+web/node_modules/
+internal/server/web/dist/
+icloud_distribution
+*.log
+.DS_Store
+.metadata_never_index

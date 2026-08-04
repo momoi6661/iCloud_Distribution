@@ -1,0 +1,13 @@
+services:
+  icloud_distribution:
+    build: .
+    container_name: icloud_distribution
+    ports:
+      - "8081:8081"
+    environment:
+      # UI 访问口令,部署前必须修改 (也可用 .env 文件)
+      - HME_UI_TOKEN=${HME_UI_TOKEN:-change-me}
+    volumes:
+      # accounts.json 持久化到宿主机 ./data
+      - ./data:/app/data
+    restart: unless-stopped

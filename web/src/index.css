@@ -1,0 +1,152 @@
+/* 全局设计系统 */
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #f0f2f7;
+}
+
+/* 细腻滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* 卡片悬浮过渡 */
+.hme-card {
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.hme-card:hover {
+  box-shadow: 0 6px 24px rgba(102, 126, 234, 0.12);
+}
+
+/* 统计卡片 */
+.stat-card {
+  border-radius: 14px;
+  border: none;
+  overflow: hidden;
+  position: relative;
+}
+.stat-card::after {
+  content: '';
+  position: absolute;
+  right: -20px;
+  top: -20px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.06;
+}
+
+/* 邮件列表项 */
+.mail-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+  align-items: flex-start;
+}
+.mail-item:hover {
+  background: rgba(102, 126, 234, 0.06);
+  transform: translateX(2px);
+}
+.mail-item + .mail-item {
+  border-top: 1px solid #f0f0f5;
+}
+
+.mail-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+.mail-avatar.junk {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.mail-main {
+  flex: 1;
+  min-width: 0;
+}
+.mail-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.mail-subject {
+  font-weight: 600;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mail-date {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.mail-from {
+  font-size: 13px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.mail-preview {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 登录页玻璃拟态 */
+.login-card {
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* 顶栏 */
+.hme-header {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 2px 16px rgba(102, 126, 234, 0.35);
+}
+
+/* 表格细节 */
+.ant-table-tbody > tr > td {
+  transition: background 0.15s ease;
+}
+.ant-tag {
+  border-radius: 6px;
+}
+
+/* 按钮圆角统一 */
+.ant-btn {
+  border-radius: 8px;
+}
