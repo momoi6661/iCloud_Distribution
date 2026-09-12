@@ -3,12 +3,97 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"icloud_distribution/internal/account"
 )
 
 func (s *Server) listAccounts(c *gin.Context) {
 	ok(c, s.mgr.ListAccounts())
+}
+
+func (s *Server) listDisabledAccounts(c *gin.Context) {
+	ok(c, s.mgr.ListDisabledAccounts())
+}
+
+func (s *Server) getOrganizer(c *gin.Context) {
+	groups, metadata, err := s.mgr.Organizer(c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	ok(c, gin.H{"groups": groups, "metadata": metadata})
+}
+
+type organizerGroupReq struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) createOrganizerGroup(c *gin.Context) {
+	var req organizerGroupReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: name 必填 — "+err.Error())
+		return
+	}
+	group, err := s.mgr.CreateGroup(c.Param("id"), req.Name)
+	if err != nil {
+		organizerFail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, apiResp{Success: true, Data: group})
+}
+
+func (s *Server) updateOrganizerGroup(c *gin.Context) {
+	var req organizerGroupReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: name 必填 — "+err.Error())
+		return
+	}
+	if err := s.mgr.UpdateGroup(c.Param("id"), c.Param("group_id"), req.Name); err != nil {
+		organizerFail(c, err)
+		return
+	}
+	ok(c, gin.H{"id": c.Param("group_id"), "name": req.Name})
+}
+
+func (s *Server) deleteOrganizerGroup(c *gin.Context) {
+	if err := s.mgr.DeleteGroup(c.Param("id"), c.Param("group_id")); err != nil {
+		organizerFail(c, err)
+		return
+	}
+	ok(c, gin.H{"id": c.Param("group_id")})
+}
+
+type aliasMetadataReq struct {
+	AliasID string `json:"alias_id"`
+	Email   string `json:"email"`
+	GroupID string `json:"group_id"`
+	Note    string `json:"note"`
+}
+
+func (s *Server) updateAliasMetadata(c *gin.Context) {
+	var req aliasMetadataReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: alias_id 必填 — "+err.Error())
+		return
+	}
+	meta, err := s.mgr.UpdateAliasMetadata(c.Param("id"), account.AliasMetadata{
+		AliasID: req.AliasID, Email: req.Email, GroupID: req.GroupID, Note: req.Note,
+	})
+	if err != nil {
+		organizerFail(c, err)
+		return
+	}
+	ok(c, meta)
+}
+
+func organizerFail(c *gin.Context, err error) {
+	if strings.Contains(err.Error(), "不存在") {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	fail(c, http.StatusBadRequest, err.Error())
 }
 
 type addAccountReq struct {
@@ -46,6 +131,57 @@ func (s *Server) removeAccount(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"id": id})
+}
+
+func (s *Server) deactivateAccount(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.mgr.DeactivateAccount(id); err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	ok(c, gin.H{"id": id, "status": "disabled"})
+}
+
+func (s *Server) restoreAccount(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.mgr.RestoreAccount(id); err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	acc, _ := s.mgr.GetAccount(id)
+	ok(c, gin.H{"id": id, "status": acc.Status})
+}
+
+type batchAccountReq struct {
+	IDs []string `json:"ids" binding:"required"`
+}
+
+func (s *Server) batchDeactivateAccounts(c *gin.Context) {
+	var req batchAccountReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: ids 必填 — "+err.Error())
+		return
+	}
+	changed, alreadyDisabled, notFound, err := s.mgr.BatchDeactivate(req.IDs)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"requested": len(req.IDs), "changed": changed, "already_disabled": alreadyDisabled, "not_found": notFound})
+}
+
+func (s *Server) batchRemoveAccounts(c *gin.Context) {
+	var req batchAccountReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: ids 必填 — "+err.Error())
+		return
+	}
+	deleted, notFound, err := s.mgr.BatchRemove(req.IDs)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"requested": len(req.IDs), "deleted": deleted, "not_found": notFound})
 }
 
 type setPwdReq struct {

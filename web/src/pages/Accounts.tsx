@@ -1,204 +1,101 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tag, Tooltip, message } from 'antd'
-import { CheckCircleOutlined, DeleteOutlined, KeyOutlined, MailOutlined, PlusOutlined, ThunderboltOutlined, UserOutlined } from '@ant-design/icons'
-import { Account, api } from '../api/client'
+import { api, type Account, type BatchAccountResult } from '../api/client'
+import Icon from '../components/Icon'
 import PageLayout from '../components/PageLayout'
-import AutoLoginModal from '../components/AutoLoginModal'
+import { Dialog, SidePanel } from '../components/Overlay'
+import SelectMenu from '../components/SelectMenu'
 
-// AccountsPage 账号列表页: 状态总览、添加账号、自动授权入口。
+function batchNotice(result: BatchAccountResult, action: 'deactivate' | 'delete') {
+  const requested = result.requested ?? 0
+  const changed = result.changed ?? (action === 'delete' ? result.deleted ?? 0 : 0)
+  const alreadyDisabled = result.already_disabled ?? 0
+  const notFound = result.not_found ?? 0
+  const failed = result.failed ?? 0
+  if (action === 'delete') return `已删除 ${result.deleted ?? changed} 个账号（请求 ${requested} 个）${notFound ? `，${notFound} 个未找到` : ''}${failed ? `，${failed} 个失败` : ''}。`
+  return `已停用 ${changed} 个账号（请求 ${requested} 个）${alreadyDisabled ? `，${alreadyDisabled} 个原已停用` : ''}${notFound ? `，${notFound} 个未找到` : ''}${failed ? `，${failed} 个失败` : ''}。`
+}
+
+const dateText = (value?: string) => value ? new Date(value).toLocaleDateString('zh-CN') : '—'
+const PAGE_SIZE = 20
+
 export default function AccountsPage({ onLogout }: { onLogout: () => void }) {
+  const navigate = useNavigate()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<string[]>([])
+  const [query, setQuery] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const [addOpen, setAddOpen] = useState(false)
-  const [loginTarget, setLoginTarget] = useState<Account | null>(null)
-  const navigate = useNavigate()
-  const [form] = Form.useForm()
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [page, setPage] = useState(1)
+  const [countsLoading, setCountsLoading] = useState<string[]>([])
 
   const refresh = async () => {
     setLoading(true)
     try {
-      setAccounts(await api.listAccounts())
-    } catch (e) {
-      message.error((e as Error).message)
+      const listed = (await api.listAccounts()).filter((account) => account.status !== 'disabled')
+      setAccounts(listed)
+      setCountsLoading(listed.map((account) => account.id))
+      void Promise.all(listed.map(async (account) => {
+        try {
+          const result = await api.listAliases(account.id)
+          const aliases = result.aliases || []
+          setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, alias_total: aliases.length, alias_active: aliases.filter((alias) => alias.active).length } : item))
+        } catch {
+          // Keep the saved summary when a live alias refresh is unavailable.
+        } finally {
+          setCountsLoading((current) => current.filter((id) => id !== account.id))
+        }
+      }))
+    } catch (error) {
+      setNotice((error as Error).message)
     } finally {
       setLoading(false)
     }
   }
+  useEffect(() => { void refresh() }, [])
+  useEffect(() => { if (!notice) return undefined; const timer = window.setTimeout(() => setNotice(''), 4200); return () => window.clearTimeout(timer) }, [notice])
 
-  useEffect(() => {
-    refresh()
-  }, [])
+  const visibleAccounts = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return accounts
+    return accounts.filter((account) => [account.name, account.icloud_email, account.real_email, account.host].some((value) => value?.toLowerCase().includes(needle)))
+  }, [accounts, query])
+  const totalPages = Math.max(1, Math.ceil(visibleAccounts.length / PAGE_SIZE))
+  const pagedAccounts = useMemo(() => visibleAccounts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [page, visibleAccounts])
+  useEffect(() => { setPage(1) }, [query])
+  useEffect(() => { setPage((current) => Math.min(current, totalPages)) }, [totalPages])
+  const allSelected = pagedAccounts.length > 0 && pagedAccounts.every((account) => selected.includes(account.id))
+  const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  const toggleAll = () => setSelected(allSelected ? selected.filter((id) => !pagedAccounts.some((account) => account.id === id)) : [...new Set([...selected, ...pagedAccounts.map((account) => account.id)])])
 
-  const addAccount = async (values: { name: string; email?: string; cookies?: string; proxy?: string; host?: string }) => {
-    try {
-      await api.addAccount(values)
-      message.success('账号已添加')
-      setAddOpen(false)
-      form.resetFields()
-      refresh()
-    } catch (e) {
-      message.error((e as Error).message)
-    }
+  const deactivateSelected = async () => {
+    if (!selected.length) return
+    setBusy(true)
+    try { const result = await api.batchDisableAccounts(selected); setNotice(batchNotice(result, 'deactivate')); setSelected([]); await refresh() } catch (error) { setNotice((error as Error).message) } finally { setBusy(false) }
+  }
+  const deleteSelected = async () => {
+    if (!selected.length) return
+    setBusy(true)
+    try { const result = await api.batchDeleteAccounts(selected); setNotice(batchNotice(result, 'delete')); setDeleteConfirm(false); setSelected([]); await refresh() } catch (error) { setNotice((error as Error).message) } finally { setBusy(false) }
   }
 
-  const statusTag = (acc: Account) => {
-    switch (acc.status) {
-      case 'active':
-        return <Tag color="success">正常</Tag>
-      case 'pending':
-        return <Tag color="warning">待授权</Tag>
-      default:
-        return (
-          <Tooltip title={acc.last_error}>
-            <Tag color="error">异常</Tag>
-          </Tooltip>
-        )
-    }
-  }
+  return <PageLayout title="活跃账号" eyebrow="运维总览" onLogout={onLogout}>
+    {notice && <div className="notice toast" role="status" aria-live="polite"><span>{notice}</span><button className="text-button" onClick={() => setNotice('')}>关闭</button></div>}
+    <section className="metrics-grid" aria-label="账号概览"><div className="metric-card"><span>活跃账号</span><strong>{accounts.length}</strong><small>当前可管理</small></div><div className="metric-card"><span>活跃别名</span><strong>{accounts.reduce((sum, account) => sum + (account.alias_active || 0), 0)}</strong><small>正在转发</small></div><div className="metric-card"><span>待处理</span><strong>{accounts.filter((account) => account.status === 'pending' || account.status === 'error').length}</strong><small>需要检查</small></div><div className="metric-card"><span>已选账号</span><strong>{selected.length}</strong><small>批量操作范围</small></div></section>
+    <section className="panel account-panel" aria-labelledby="accounts-title"><div className="panel-header"><div><span className="eyebrow">账号矩阵</span><h2 id="accounts-title">账号列表 <span className="count-badge">{visibleAccounts.length}</span></h2></div><div className="inline-actions"><label className="search-field"><Icon name="search" size={16} /><input aria-label="搜索账号" placeholder="搜索名称、邮箱或主机" value={query} onChange={(event) => setQuery(event.target.value)} /></label><button className="button primary" onClick={() => setAddOpen(true)}><Icon name="plus" size={16} />添加账号</button></div></div>
+      {selected.length > 0 && <div className="batch-toolbar"><span><strong>{selected.length}</strong> 个已选</span><span className="toolbar-separator" /><button className="button secondary" disabled={busy} onClick={() => void deactivateSelected}><Icon name="archive" size={16} />批量停用</button><button className="danger-ghost" disabled={busy} onClick={() => setDeleteConfirm(true)}><Icon name="trash" size={16} />批量删除</button><button className="text-button" onClick={() => setSelected([])}>清除选择</button></div>}
+      {loading ? <div className="skeleton-list">{[1, 2, 3].map((item) => <div className="skeleton-row" key={item}><span /><span /><span /><span /></div>)}</div> : visibleAccounts.length === 0 ? <div className="empty-state"><div className="empty-glyph"><Icon name="grid" size={22} /></div><h3>{query ? '没有匹配的账号。' : '还没有活跃账号。'}</h3><p>{query ? '请尝试名称、邮箱或主机的其他关键词。' : '添加第一个账号后，可以在这里管理别名和收件箱。'}</p>{!query && <button className="button primary" onClick={() => setAddOpen(true)}><Icon name="plus" size={16} />添加账号</button>}</div> : <div className="table-wrap"><table className="account-table"><thead><tr><th className="check-col"><label className="checkbox-hit"><input type="checkbox" aria-label="全选当前账号" checked={allSelected} onChange={toggleAll} /></label></th><th>账号</th><th>状态</th><th>别名</th><th>最近验证</th><th className="action-col"><span className="sr-only">操作</span></th></tr></thead><tbody>{pagedAccounts.map((account, index) => <tr key={account.id} className={`${selected.includes(account.id) ? 'selected' : ''} status-row-${account.status}`} onClick={() => navigate(`/accounts/${account.id}`)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate(`/accounts/${account.id}`) } }} tabIndex={0} style={{ animationDelay: `${index * 35}ms` }}><td className="check-col" onClick={(event) => event.stopPropagation()}><label className="checkbox-hit"><input type="checkbox" aria-label={`选择 ${account.name}`} checked={selected.includes(account.id)} onChange={() => toggle(account.id)} /></label></td><td><div className="account-identity"><span className={`account-sigil sigil-${account.status}`}>{account.name.slice(0, 1).toUpperCase()}</span><span><strong>{account.name}</strong><small className="mono">{account.real_email || account.icloud_email || account.id}</small></span></div></td><td><span className={`status status-${account.status === 'active' ? 'ready' : account.status === 'error' ? 'error' : 'pending'}`}>{account.status === 'active' ? '正常' : account.status === 'error' ? '异常' : '待处理'}</span></td><td><span className="alias-load">{countsLoading.includes(account.id) ? <small>同步中…</small> : <><strong>{account.alias_active || 0}</strong><small> / {account.alias_total || 0} 个活跃</small></>}</span></td><td><span className="validation-time">{dateText(account.last_validated)}</span></td><td className="action-col"><button className="button small secondary" onClick={(event) => { event.stopPropagation(); navigate(`/accounts/${account.id}`) }}>查看详情<Icon name="arrow" size={15} /></button></td></tr>)}</tbody></table></div>}{totalPages > 1 && <nav className="pagination" aria-label="账号分页"><button className="button secondary" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>上一页</button><span aria-live="polite">第 {page} / {totalPages} 页</span><button className="button secondary" disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>下一页</button></nav>}
+    </section>
+    <SidePanel open={addOpen} title="添加账号" onClose={() => setAddOpen(false)}><AddAccountForm busy={busy} onSubmit={async (values) => { setBusy(true); try { await api.addAccount(values); setAddOpen(false); setNotice('账号已添加。'); await refresh() } catch (error) { setNotice((error as Error).message) } finally { setBusy(false) } }} /></SidePanel>
+    <Dialog open={deleteConfirm} title="删除所选账号？" onClose={() => setDeleteConfirm(false)}><div className="dialog-body"><div className="dialog-warning destructive"><Icon name="trash" size={20} /><div><strong>此操作无法撤销。</strong><p>将永久删除所选 {selected.length} 个账号及其本地凭据、别名记录。请确认这是明确的清理操作。</p></div></div><div className="dialog-actions"><button className="button secondary" onClick={() => setDeleteConfirm(false)}>取消</button><button className="button danger" disabled={busy} onClick={() => void deleteSelected()}>{busy ? '删除中…' : '确认永久删除'}</button></div></div></Dialog>
+  </PageLayout>
+}
 
-  return (
-    <PageLayout title="iCloud Distribution" onLogout={onLogout}>
-      <Row gutter={16} style={{ marginBottom: 20 }}>
-        {[
-          { title: '账号总数', value: accounts.length, color: '#667eea', icon: <UserOutlined /> },
-          {
-            title: '正常账号',
-            value: accounts.filter((a) => a.status === 'active').length,
-            color: '#52c41a',
-            icon: <CheckCircleOutlined />,
-          },
-          {
-            title: '别名总数',
-            value: accounts.reduce((sum, a) => sum + (a.alias_total || 0), 0),
-            color: '#764ba2',
-            icon: <MailOutlined />,
-          },
-        ].map((s) => (
-          <Col span={8} key={s.title}>
-            <Card className="stat-card hme-card" styles={{ body: { padding: '18px 24px' } }}>
-              <Space size={16}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: `${s.color}14`,
-                    color: s.color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 22,
-                  }}
-                >
-                  {s.icon}
-                </div>
-                <Statistic title={s.title} value={s.value} valueStyle={{ color: s.color, fontWeight: 700 }} />
-              </Space>
-            </Card>
-          </Col>
-        ))}
-      </Row>
-      <Card
-        className="hme-card"
-        title="账号管理"
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-            添加账号
-          </Button>
-        }
-      >
-        <Table
-          rowKey="id"
-          loading={loading}
-          dataSource={accounts}
-          pagination={false}
-          onRow={(acc) => ({ onClick: () => navigate(`/accounts/${acc.id}`), style: { cursor: 'pointer' } })}
-          columns={[
-            { title: '名称', dataIndex: 'name' },
-            { title: '邮箱', dataIndex: 'real_email', render: (v: string) => v || '-' },
-            { title: '状态', key: 'status', render: (_, acc) => statusTag(acc) },
-            {
-              title: '别名',
-              key: 'aliases',
-              render: (_, acc) => `${acc.alias_active} / ${acc.alias_total}`,
-            },
-            {
-              title: '操作',
-              key: 'actions',
-              render: (_, acc) => (
-                <Space onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    size="small"
-                    type="primary"
-                    ghost
-                    icon={<ThunderboltOutlined />}
-                    onClick={() => setLoginTarget(acc)}
-                  >
-                    自动授权
-                  </Button>
-                  <Popconfirm title="确认删除该账号?" onConfirm={() => api.removeAccount(acc.id).then(refresh)}>
-                    <Button size="small" danger icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-        />
-      </Card>
-
-      <Modal
-        title="添加 iCloud 账号"
-        open={addOpen}
-        onCancel={() => setAddOpen(false)}
-        onOk={() => form.submit()}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical" onFinish={addAccount}>
-          <Form.Item name="name" label="账号名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="例如: 主号" />
-          </Form.Item>
-          <Form.Item name="email" label="Apple ID (用于自动授权)" tooltip="不填则只能粘贴 Cookie 使用">
-            <Input placeholder="you@example.com" />
-          </Form.Item>
-          <Form.Item
-            name="host"
-            label="账号区域"
-            initialValue="icloud.com.cn"
-            tooltip="国区 Apple ID 必须选择国区,否则授权会失败"
-          >
-            <Select
-              options={[
-                { value: 'icloud.com.cn', label: '国区 (icloud.com.cn)' },
-                { value: 'icloud.com', label: '国际区 (icloud.com)' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="cookies" label="Cookie (可选)" tooltip="JSON 或 Header 格式,粘贴后跳过自动授权">
-            <Input.TextArea rows={3} placeholder='{"X-APPLE-WEBAUTH-TOKEN": "..."}' />
-          </Form.Item>
-          <Form.Item name="proxy" label="代理 (可选)">
-            <Input placeholder="http://user:pass@host:port 或 socks5://..." />
-          </Form.Item>
-        </Form>
-        <Space direction="vertical" style={{ color: '#888' }}>
-          <span>
-            <KeyOutlined /> 添加后点击「自动授权」,输入密码即可自动获取 Cookie。
-          </span>
-        </Space>
-      </Modal>
-
-      {loginTarget && (
-        <AutoLoginModal
-          accountId={loginTarget.id}
-          accountName={loginTarget.name}
-          open
-          onClose={(refreshed) => {
-            setLoginTarget(null)
-            if (refreshed) refresh()
-          }}
-        />
-      )}
-    </PageLayout>
-  )
+function AddAccountForm({ busy, onSubmit }: { busy: boolean; onSubmit: (values: { name: string; email?: string; cookies?: string; host?: string; proxy?: string }) => Promise<void> }) {
+  const [host, setHost] = useState('icloud.com')
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()) as Record<string, string>; await onSubmit({ name: values.name.trim(), email: values.email.trim() || undefined, cookies: values.cookies.trim() || undefined, host, proxy: values.proxy.trim() || undefined }) }
+  return <form className="drawer-form" onSubmit={submit}><p className="form-intro">添加一个由本地服务管理的 iCloud 账号。凭据只用于当前主机的运维请求。</p><label className="field"><span>显示名称</span><input name="name" placeholder="例如：团队收件箱" required autoFocus /></label><label className="field"><span>iCloud 邮箱 <small>可选</small></span><input name="email" type="email" placeholder="operator@icloud.com" /></label><label className="field"><span>服务主机</span><SelectMenu value={host} options={[{ value: 'icloud.com', label: 'icloud.com' }, { value: 'icloud.com.cn', label: 'icloud.com.cn' }]} onChange={setHost} ariaLabel="选择服务主机" className="field-select-menu" /></label><label className="field"><span>Cookies <small>可选</small></span><textarea name="cookies" rows={4} placeholder="粘贴现有登录 Cookies" /></label><label className="field"><span>代理地址 <small>可选</small></span><input name="proxy" placeholder="http://127.0.0.1:7890" /></label><div className="drawer-actions"><button className="button primary" type="submit" disabled={busy}>{busy ? '添加中…' : '保存账号'}<Icon name="arrow" size={16} /></button></div></form>
 }

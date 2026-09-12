@@ -490,13 +490,18 @@ func (c *WebClient) FindByAlias(alias string, limit int) ([]Message, error) {
 					if len(mm.To) > 0 {
 						to = mm.To[0]
 					}
+					messageID := mm.UID
+					if messageID == "" {
+						messageID = digest.ID
+					}
 					add(idx, Message{
-						ID:      digest.ID,
+						ID:      messageID,
 						From:    from,
 						To:      to,
 						Subject: digest.Subject,
 						Preview: digest.Preview,
 						Date:    digest.Date,
+						Folder:  folder,
 					})
 				}
 			}(idx, folder, digest)

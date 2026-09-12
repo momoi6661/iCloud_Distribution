@@ -20,21 +20,41 @@ import (
 
 // Account 描述一个 iCloud 账号。
 type Account struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	RealEmail    string            `json:"real_email"`
-	ICloudEmail  string            `json:"icloud_email"`
-	Cookies      map[string]string `json:"cookies"`
-	Host         string            `json:"host"`
-	Proxy        string            `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
-	AppPassword  string            `json:"app_password,omitempty"`
-	Status       string            `json:"status"` // active / error
-	AliasTotal   int               `json:"alias_total"`
-	AliasActive  int               `json:"alias_active"`
-	LastValidated string           `json:"last_validated"`
-	LastError    string            `json:"last_error,omitempty"`
-	CreatedAt    string            `json:"created_at"`
+	ID            string                   `json:"id"`
+	Name          string                   `json:"name"`
+	RealEmail     string                   `json:"real_email"`
+	ICloudEmail   string                   `json:"icloud_email"`
+	Cookies       map[string]string        `json:"cookies"`
+	Host          string                   `json:"host"`
+	Proxy         string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
+	AppPassword   string                   `json:"app_password,omitempty"`
+	Status        string                   `json:"status"` // active / error
+	AliasTotal    int                      `json:"alias_total"`
+	AliasActive   int                      `json:"alias_active"`
+	LastValidated string                   `json:"last_validated"`
+	LastError     string                   `json:"last_error,omitempty"`
+	CreatedAt     string                   `json:"created_at"`
+	Groups        []LocalGroup             `json:"groups,omitempty"`
+	AliasMetadata map[string]AliasMetadata `json:"alias_metadata,omitempty"`
 }
+
+// LocalGroup is a local-only organizer group; it never represents an iCloud resource.
+type LocalGroup struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+}
+
+// AliasMetadata stores local organizer information for an alias.
+type AliasMetadata struct {
+	AliasID   string `json:"alias_id"`
+	Email     string `json:"email"`
+	GroupID   string `json:"group_id"`
+	Note      string `json:"note"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+const statusDisabled = "disabled"
 
 // gatewayTTL mccgateway URL 缓存有效期。
 const gatewayTTL = time.Hour
@@ -110,7 +130,7 @@ func (m *Manager) load() error {
 
 func (m *Manager) save() error {
 	wrapper := struct {
-		Accounts map[string]*Account `json:"accounts"`
+		Accounts  map[string]*Account `json:"accounts"`
 		UpdatedAt string              `json:"updated_at"`
 	}{
 		Accounts:  m.accounts,
@@ -248,6 +268,130 @@ func (m *Manager) RemoveAccount(id string) bool {
 	return true
 }
 
+// DeactivateAccount disables an account without removing its credentials.
+func (m *Manager) DeactivateAccount(id string) error {
+	m.mu.Lock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		m.mu.Unlock()
+		return nil
+	}
+	acc.Status = statusDisabled
+	err := m.save()
+	m.mu.Unlock()
+	if err == nil {
+		m.DropIMAP(id)
+	}
+	return err
+}
+
+// RestoreAccount re-enables a disabled account and preserves its credentials.
+func (m *Manager) RestoreAccount(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		if len(acc.Cookies) > 0 {
+			acc.Status = "active"
+		} else {
+			acc.Status = "pending"
+		}
+		return m.save()
+	}
+	return nil
+}
+
+// ListDisabledAccounts returns disabled accounts without cookies.
+func (m *Manager) ListDisabledAccounts() []*Account {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.listAccountsLocked(func(acc *Account) bool { return acc.Status == statusDisabled })
+}
+
+func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
+	out := make([]*Account, 0)
+	for _, acc := range m.accounts {
+		if !include(acc) {
+			continue
+		}
+		cp := *acc
+		cp.Cookies = nil
+		out = append(out, &cp)
+	}
+	return out
+}
+
+// BatchDeactivate disables each existing account and reports per-action counts.
+func (m *Manager) BatchDeactivate(ids []string) (changed, alreadyDisabled, notFound int, err error) {
+	if err := validateIDs(ids); err != nil {
+		return 0, 0, 0, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		acc, ok := m.accounts[id]
+		if !ok {
+			notFound++
+		} else if acc.Status == statusDisabled {
+			alreadyDisabled++
+		} else {
+			acc.Status = statusDisabled
+			changed++
+		}
+	}
+	if changed > 0 {
+		err = m.save()
+	}
+	return
+}
+
+// BatchRemove deletes each existing account and reports per-action counts.
+func (m *Manager) BatchRemove(ids []string) (deleted, notFound int, err error) {
+	if err := validateIDs(ids); err != nil {
+		return 0, 0, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := m.accounts[id]; !ok {
+			notFound++
+			continue
+		}
+		delete(m.accounts, id)
+		delete(m.gatewayCache, id)
+		delete(m.imapPool, id)
+		deleted++
+	}
+	if deleted > 0 {
+		err = m.save()
+	}
+	return
+}
+
+func validateIDs(ids []string) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("ids 不能为空")
+	}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("ids 不能包含空 ID")
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("ids 不能包含重复 ID: %s", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
 // GetAccount 返回账号副本。
 func (m *Manager) GetAccount(id string) (*Account, bool) {
 	m.mu.Lock()
@@ -264,13 +408,147 @@ func (m *Manager) GetAccount(id string) (*Account, bool) {
 func (m *Manager) ListAccounts() []*Account {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]*Account, 0, len(m.accounts))
-	for _, acc := range m.accounts {
-		cp := *acc
-		cp.Cookies = nil
-		out = append(out, &cp)
+	return m.listAccountsLocked(func(*Account) bool { return true })
+}
+
+const (
+	maxOrganizerName  = 200
+	maxOrganizerNote  = 2000
+	maxOrganizerEmail = 320
+	maxOrganizerID    = 200
+)
+
+// Organizer returns local organizer data only. It performs no network calls.
+func (m *Manager) Organizer(id string) ([]LocalGroup, map[string]AliasMetadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return nil, nil, fmt.Errorf("账号不存在: %s", id)
 	}
-	return out
+	groups := make([]LocalGroup, len(acc.Groups))
+	copy(groups, acc.Groups)
+	metadata := make(map[string]AliasMetadata, len(acc.AliasMetadata))
+	for aliasID, meta := range acc.AliasMetadata {
+		metadata[aliasID] = meta
+	}
+	return groups, metadata, nil
+}
+
+func (m *Manager) CreateGroup(accountID, name string) (LocalGroup, error) {
+	name, err := organizerName(name)
+	if err != nil {
+		return LocalGroup{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[accountID]
+	if !ok {
+		return LocalGroup{}, fmt.Errorf("账号不存在: %s", accountID)
+	}
+	group := LocalGroup{ID: "group_" + uuid.New().String()[:8], Name: name, CreatedAt: time.Now().Format(time.RFC3339)}
+	acc.Groups = append(acc.Groups, group)
+	if err := m.save(); err != nil {
+		return LocalGroup{}, err
+	}
+	return group, nil
+}
+
+func (m *Manager) UpdateGroup(accountID, groupID, name string) error {
+	name, err := organizerName(name)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[accountID]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", accountID)
+	}
+	for i := range acc.Groups {
+		if acc.Groups[i].ID == groupID {
+			acc.Groups[i].Name = name
+			return m.save()
+		}
+	}
+	return fmt.Errorf("分组不存在: %s", groupID)
+}
+
+func (m *Manager) DeleteGroup(accountID, groupID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[accountID]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", accountID)
+	}
+	index := -1
+	for i := range acc.Groups {
+		if acc.Groups[i].ID == groupID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("分组不存在: %s", groupID)
+	}
+	acc.Groups = append(acc.Groups[:index], acc.Groups[index+1:]...)
+	for aliasID, meta := range acc.AliasMetadata {
+		if meta.GroupID == groupID {
+			meta.GroupID = ""
+			acc.AliasMetadata[aliasID] = meta
+		}
+	}
+	return m.save()
+}
+
+func (m *Manager) UpdateAliasMetadata(accountID string, meta AliasMetadata) (AliasMetadata, error) {
+	var err error
+	meta.AliasID = strings.TrimSpace(meta.AliasID)
+	meta.Email = strings.TrimSpace(meta.Email)
+	meta.GroupID = strings.TrimSpace(meta.GroupID)
+	meta.Note = strings.TrimSpace(meta.Note)
+	if meta.AliasID == "" || len(meta.AliasID) > maxOrganizerID {
+		return AliasMetadata{}, fmt.Errorf("alias_id 不能为空且长度不能超过 %d", maxOrganizerID)
+	}
+	if len(meta.Email) > maxOrganizerEmail || len(meta.Note) > maxOrganizerNote {
+		return AliasMetadata{}, fmt.Errorf("email 或 note 超出长度限制")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[accountID]
+	if !ok {
+		return AliasMetadata{}, fmt.Errorf("账号不存在: %s", accountID)
+	}
+	if meta.GroupID != "" {
+		found := false
+		for _, group := range acc.Groups {
+			if group.ID == meta.GroupID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return AliasMetadata{}, fmt.Errorf("分组不存在: %s", meta.GroupID)
+		}
+	}
+	meta.UpdatedAt = time.Now().Format(time.RFC3339)
+	if acc.AliasMetadata == nil {
+		acc.AliasMetadata = make(map[string]AliasMetadata)
+	}
+	acc.AliasMetadata[meta.AliasID] = meta
+	err = m.save()
+	return meta, err
+}
+
+func organizerName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("分组名称不能为空")
+	}
+	if len(name) > maxOrganizerName {
+		return "", fmt.Errorf("分组名称长度不能超过 %d", maxOrganizerName)
+	}
+	return name, nil
 }
 
 // HMEClient 为指定账号创建一个新的 HME 客户端。
@@ -281,6 +559,9 @@ func (m *Manager) HMEClient(id string, verbose bool) (*hme.Client, error) {
 	m.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return nil, fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
 	}
 	if len(acc.Cookies) == 0 {
 		return nil, fmt.Errorf("账号未配置 Cookie，无法使用 HME 功能")
@@ -297,6 +578,9 @@ func (m *Manager) NewLoginClient(id string) (*hme.Client, string, error) {
 	m.mu.Unlock()
 	if !ok {
 		return nil, "", fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return nil, "", fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
 	}
 
 	email := acc.ICloudEmail
@@ -337,6 +621,9 @@ func (m *Manager) MailClient(id string) (*mail.Client, error) {
 	if !ok {
 		return nil, fmt.Errorf("账号不存在: %s", id)
 	}
+	if acc.Status == statusDisabled {
+		return nil, fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
 	imapEmail := acc.ICloudEmail
 	if imapEmail == "" {
 		imapEmail = acc.RealEmail
@@ -361,6 +648,10 @@ func (m *Manager) AcquireIMAP(id string) (*mail.Client, *sync.Mutex, error) {
 	if !ok {
 		m.mu.Unlock()
 		return nil, nil, fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		m.mu.Unlock()
+		return nil, nil, fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
 	}
 	imapEmail := acc.ICloudEmail
 	if imapEmail == "" {
@@ -427,6 +718,9 @@ func (m *Manager) WebMailClient(id string) (*mail.WebClient, error) {
 	if !ok {
 		return nil, fmt.Errorf("账号不存在: %s", id)
 	}
+	if acc.Status == statusDisabled {
+		return nil, fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
 	if len(acc.Cookies) == 0 {
 		return nil, fmt.Errorf("账号未配置 Cookie，无法读取邮件")
 	}
@@ -469,35 +763,49 @@ func (m *Manager) SetAppPassword(id, icloudEmail, appPassword string) error {
 	if !ok {
 		return fmt.Errorf("账号不存在: %s", id)
 	}
+	if acc.Status == statusDisabled {
+		return fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
+	icloudEmail = strings.TrimSpace(icloudEmail)
+	appPassword = strings.TrimSpace(appPassword)
 	if icloudEmail == "" {
 		return fmt.Errorf("iCloud 邮箱不能为空")
+	}
+	if !isICloudDomain(icloudEmail) {
+		return fmt.Errorf("请输入 iCloud 邮箱（@icloud.com、@me.com 或 @mac.com），不要填写 Apple ID 登录邮箱")
 	}
 	if appPassword == "" {
 		return fmt.Errorf("App 专用密码不能为空")
 	}
 
-	// 测试连接
+	// 只验证 IMAP 登录。INBOX 选择/计数不是凭据验证，且可能因邮箱状态失败。
 	mc := mail.NewClient(icloudEmail, appPassword)
 	if err := mc.Connect(); err != nil {
 		return err
 	}
-	count, err := mc.InboxCount()
 	mc.Disconnect()
-	if err != nil {
-		return err
-	}
+	return m.persistAppPassword(id, icloudEmail, appPassword)
+}
 
+func (m *Manager) persistAppPassword(id, icloudEmail, appPassword string) error {
 	m.mu.Lock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		m.mu.Unlock()
+		return fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
 	acc.ICloudEmail = icloudEmail
 	acc.AppPassword = appPassword
-	err = m.save()
+	err := m.save()
 	m.mu.Unlock()
-	m.DropIMAP(id) // 密码变了,丢弃旧连接
-	if err != nil {
-		return err
+	if err == nil {
+		m.DropIMAP(id) // 密码变了,丢弃旧连接
 	}
-	_ = count
-	return nil
+	return err
 }
 
 // SaveCookies 保存指定账号的最新 Cookie（HMEClient 操作后刷新的 token）。
@@ -523,6 +831,9 @@ func (m *Manager) UpdateCookies(id string, cookies map[string]string) error {
 	m.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
 	}
 
 	// 自动校验 Cookie 是否有效
@@ -588,9 +899,17 @@ func deriveICloudEmail(info *hme.AccountInfo) string {
 }
 
 func isICloudDomain(email string) bool {
-	return email != "" && (strings.Contains(email, "@icloud.com") ||
-		strings.Contains(email, "@me.com") ||
-		strings.Contains(email, "@mac.com"))
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	at := strings.LastIndex(normalized, "@")
+	if at <= 0 || at == len(normalized)-1 {
+		return false
+	}
+	switch normalized[at+1:] {
+	case "icloud.com", "me.com", "mac.com":
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmpty(vals ...string) string {

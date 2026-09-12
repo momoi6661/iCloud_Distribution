@@ -73,8 +73,18 @@ func (s *Server) register() {
 
 		// ===== 账号管理 =====
 		authed.GET("/accounts", s.listAccounts)
+		authed.GET("/accounts/disabled", s.listDisabledAccounts)
 		authed.POST("/accounts", s.addAccount)
+		authed.POST("/accounts/batch/deactivate", s.batchDeactivateAccounts)
+		authed.POST("/accounts/batch/delete", s.batchRemoveAccounts)
 		authed.DELETE("/accounts/:id", s.removeAccount)
+		authed.POST("/accounts/:id/deactivate", s.deactivateAccount)
+		authed.POST("/accounts/:id/restore", s.restoreAccount)
+		authed.GET("/accounts/:id/organizer", s.getOrganizer)
+		authed.POST("/accounts/:id/groups", s.createOrganizerGroup)
+		authed.PUT("/accounts/:id/groups/:group_id", s.updateOrganizerGroup)
+		authed.DELETE("/accounts/:id/groups/:group_id", s.deleteOrganizerGroup)
+		authed.PUT("/accounts/:id/alias-meta", s.updateAliasMetadata)
 		authed.POST("/accounts/:id/password", s.setAppPassword)
 		authed.PUT("/accounts/:id/cookies", s.updateCookies)
 

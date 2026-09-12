@@ -1,7 +1,7 @@
 // handlers_inbox.go - 邮件读取接口。
 //
-//   GET /api/inbox?account_id=acc_xxx[&alias=xxx@icloud.com][&limit=20][&days=7]
-//   GET /api/inbox/message?account_id=acc_xxx&uid=1042   (仅 IMAP 路径支持正文)
+//	GET /api/inbox?account_id=acc_xxx[&alias=xxx@icloud.com][&limit=20][&days=7]
+//	GET /api/inbox/message?account_id=acc_xxx&uid=1042   (仅 IMAP 路径支持正文)
 //
 // 认证优先级: IMAP (App Password) 优先 > Web API (Cookie) 回退。
 package server
@@ -20,6 +20,21 @@ import (
 // 返回读取方式 (imap/web_api) 与邮件列表;无可用客户端或全部失败时返回错误。
 // 供 /api/inbox 与公开分享端点共用。
 func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
+	// 指定别名时优先使用 iCloud Web API 获取标题和正文开头摘要。
+	// thread/get 同时提供 IMAP UID，因此配置了 App Password 时，点击邮件仍走 IMAP 读取完整正文。
+	if alias != "" {
+		if wmc, err := s.mgr.WebMailClient(accountID); err == nil {
+			if messages, webErr := wmc.FindByAlias(alias, limit); webErr == nil && len(messages) > 0 {
+				s.mgr.CacheGateway(accountID, wmc.GatewayURL())
+				bodyMethod := "web_api"
+				if _, imapErr := s.mgr.MailClient(accountID); imapErr == nil && messagesHaveIMAPUIDs(messages) {
+					bodyMethod = "imap"
+				}
+				return bodyMethod, messages, nil
+			}
+		}
+	}
+
 	// 优先 IMAP (连接池复用,免每次重新登录)
 	if mc, unlock, err := s.mgr.AcquireIMAP(accountID); err == nil {
 		var messages []mail.Message
@@ -31,6 +46,9 @@ func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []
 		}
 		unlock.Unlock()
 		if ferr == nil {
+			if messages == nil {
+				messages = []mail.Message{}
+			}
 			return "imap", messages, nil
 		}
 		// IMAP 失败,继续尝试 Web API
@@ -53,11 +71,23 @@ func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []
 		if err == nil {
 			// 回填网关缓存,后续请求免重新 validate
 			s.mgr.CacheGateway(accountID, wmc.GatewayURL())
+			if messages == nil {
+				messages = []mail.Message{}
+			}
 			return "web_api", messages, nil
 		}
 		lastErr = err
 	}
 	return "", nil, fmt.Errorf("读取邮件失败: %w", lastErr)
+}
+
+func messagesHaveIMAPUIDs(messages []mail.Message) bool {
+	for _, message := range messages {
+		if _, err := strconv.ParseUint(message.ID, 10, 32); err != nil || message.Folder == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) listInbox(c *gin.Context) {

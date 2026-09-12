@@ -5,13 +5,14 @@
 package mail
 
 import (
+	"encoding/base64"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/charset"
+	xhtml "golang.org/x/net/html"
 )
 
 const (
@@ -158,14 +160,11 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(from, mbox.Messages)
 
-	// 轻量拉取: 只取 envelope + 正文前 4KB (预览用),
-	// 避免为列表视图下载每封邮件的完整正文 (主要耗时来源)
-	section := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	// 列表阶段只取标题、发件人、收件人和时间。正文仅在用户点击邮件后读取。
 	items := []imap.FetchItem{
 		imap.FetchUid,
 		imap.FetchEnvelope,
 		imap.FetchInternalDate,
-		section.FetchItem(),
 	}
 
 	messages := make(chan *imap.Message, limit)
@@ -176,7 +175,7 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 
 	var out []Message
 	for msg := range messages {
-		m := toMessageWithBody(msg)
+		m := toMessage(msg)
 		m.Folder = folder
 		// days 过滤
 		if days > 0 {
@@ -282,24 +281,50 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 		seqset.AddNum(uid)
 	}
 
-	// 拉取完整正文,以便填充 Preview(OTP 验证码在正文中)。
-	// fetchByUIDs 的结果集很小 (服务端搜索命中),全文拉取开销可接受。
-	section := &imap.BodySectionName{}
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem()}
+	// Web API 无法识别别名时才走这里。先取 MIME 结构，随后只截取实际正文 part，
+	// 避免 multipart 邮件的前几 KB 只有边界和附件头而没有可读摘要。
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, imap.FetchBodyStructure}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
 	go func() {
 		done <- c.cli.UidFetch(seqset, items, messages)
 	}()
 
-	var out []Message
+	var fetched []*imap.Message
 	for msg := range messages {
-		out = append(out, toMessageWithBody(msg))
+		fetched = append(fetched, msg)
 	}
 	if err := <-done; err != nil {
 		return nil, err
 	}
+	var out []Message
+	for _, msg := range fetched {
+		m := toMessage(msg)
+		if msg.BodyStructure != nil {
+			if part, ok := selectBodyPart(msg.BodyStructure); ok {
+				m.Preview, _ = c.fetchPreview(msg.Uid, part)
+			}
+		}
+		out = append(out, m)
+	}
 	return out, nil
+}
+
+func (c *Client) fetchPreview(uid uint32, part selectedBodyPart) (string, error) {
+	seqset := new(imap.SeqSet)
+	seqset.AddNum(uid)
+	section := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}, BodyPartName: imap.BodyPartName{Path: part.path}}
+	messages := make(chan *imap.Message, 1)
+	done := make(chan error, 1)
+	go func() { done <- c.cli.UidFetch(seqset, []imap.FetchItem{section.FetchItem()}, messages) }()
+	msg := <-messages
+	if err := <-done; err != nil {
+		return "", err
+	}
+	if msg == nil || msg.GetBody(section) == nil {
+		return "", nil
+	}
+	return decodePreviewBody(msg.GetBody(section), part.contentType, part.encoding, part.charset)
 }
 
 // GetFull 获取单封邮件的完整内容(含正文)。folder 为邮件所在文件夹
@@ -318,10 +343,8 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	seqset := new(imap.SeqSet)
 	seqset.AddNum(uid)
 
-	// 用 BODY.PEEK[] 而非 RFC822: 后者会设置 \Seen,
-	// 只读 (examine) 模式下部分邮件(如垃圾邮件)取不回正文
-	section := &imap.BodySectionName{Peek: true}
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem()}
+	// 第一次只取结构和信封，先定位真正的正文 part，避免下载附件。
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, imap.FetchBodyStructure}
 	messages := make(chan *imap.Message, 1)
 	done := make(chan error, 1)
 	go func() {
@@ -336,21 +359,74 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 		return nil, fmt.Errorf("邮件不存在 (uid=%d)", uid)
 	}
 
-	full := &FullMessage{Message: toMessage(msg)}
-	// 遍历 msg.Body 取第一个可读节——GetBody(空 section) 与
-	// FetchRFC822 存储的键不匹配,会取不到正文。
-	for _, r := range msg.Body {
-		if r == nil {
-			continue
-		}
-		if em, err := mail.ReadMessage(r); err == nil {
-			body, _ := readBody(em)
-			full.Body = body
-			full.ContentType = em.Header.Get("Content-Type")
-		}
-		break
+	if msg.BodyStructure == nil {
+		return nil, fmt.Errorf("邮件缺少正文结构 (uid=%d)", uid)
 	}
+	part, ok := selectBodyPart(msg.BodyStructure)
+	if !ok {
+		return &FullMessage{Message: toMessage(msg), ContentType: "text/plain"}, nil
+	}
+
+	section := &imap.BodySectionName{Peek: true, BodyPartName: imap.BodyPartName{Path: part.path}}
+	bodyMessages := make(chan *imap.Message, 1)
+	bodyDone := make(chan error, 1)
+	go func() { bodyDone <- c.cli.UidFetch(seqset, []imap.FetchItem{section.FetchItem()}, bodyMessages) }()
+	bodyMessage := <-bodyMessages
+	if err := <-bodyDone; err != nil {
+		return nil, err
+	}
+	if bodyMessage == nil || bodyMessage.GetBody(section) == nil {
+		return nil, fmt.Errorf("邮件正文不存在 (uid=%d)", uid)
+	}
+	body, err := decodeTextBody(bodyMessage.GetBody(section), part.contentType, part.encoding, part.charset)
+	if err != nil {
+		return nil, err
+	}
+	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
 	return full, nil
+}
+
+type selectedBodyPart struct {
+	path        []int
+	contentType string
+	encoding    string
+	charset     string
+}
+
+// selectBodyPart 排除附件，并在整棵 MIME 树中优先选择 text/plain，其次 text/html。
+func selectBodyPart(bs *imap.BodyStructure) (selectedBodyPart, bool) {
+	var plain, rich *selectedBodyPart
+	bs.Walk(func(path []int, part *imap.BodyStructure) bool {
+		if strings.EqualFold(part.Disposition, "attachment") {
+			return false
+		}
+		if !strings.EqualFold(part.MIMEType, "text") {
+			return true
+		}
+		subtype := strings.ToLower(part.MIMESubType)
+		if subtype != "plain" && subtype != "html" {
+			return true
+		}
+		candidate := &selectedBodyPart{
+			path:        append([]int(nil), path...),
+			contentType: "text/" + subtype,
+			encoding:    part.Encoding,
+			charset:     part.Params["charset"],
+		}
+		if subtype == "plain" && plain == nil {
+			plain = candidate
+		} else if subtype == "html" && rich == nil {
+			rich = candidate
+		}
+		return true
+	})
+	if plain != nil {
+		return *plain, true
+	}
+	if rich != nil {
+		return *rich, true
+	}
+	return selectedBodyPart{}, false
 }
 
 // ---- 解析工具 ----
@@ -434,24 +510,30 @@ func decodeHeader(s string) string {
 	return out
 }
 
-var htmlTag = regexp.MustCompile(`<[^>]+>`)
-
 // readBody 读取邮件正文,优先 text/plain,其次从 HTML 提取纯文本。
-// 支持 multipart (含 multipart/signed/mixed/alternative) 递归取第一个文本部分。
+// 支持 multipart (含 multipart/signed/mixed/alternative)，在整棵树中选择最佳正文。
 func readBody(msg *mail.Message) (string, error) {
 	ct := msg.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/") {
 		mr := multipart.NewReader(msg.Body, multipartBoundary(ct))
+		var htmlFallback string
 		for {
 			part, err := mr.NextPart()
 			if err != nil {
 				break
 			}
-			if body, ok := readPartBody(part); ok {
+			body, kind, ok := readPartBody(part)
+			if !ok {
+				continue
+			}
+			if kind == "text/plain" {
 				return body, nil
 			}
+			if htmlFallback == "" {
+				htmlFallback = body
+			}
 		}
-		return "", nil
+		return htmlFallback, nil
 	}
 	return readTextPart(ct, msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
 }
@@ -466,72 +548,159 @@ func multipartBoundary(ct string) string {
 }
 
 // readPartBody 读取 multipart 的一个 part; 文本直接读,嵌套 multipart 递归。
-func readPartBody(part *multipart.Part) (string, bool) {
+func readPartBody(part *multipart.Part) (string, string, bool) {
+	if strings.EqualFold(strings.TrimSpace(strings.Split(part.Header.Get("Content-Disposition"), ";")[0]), "attachment") {
+		return "", "", false
+	}
 	ct := part.Header.Get("Content-Type")
 	if ct == "" {
 		ct = "text/plain"
 	}
 	if strings.HasPrefix(ct, "multipart/") {
 		mr := multipart.NewReader(part, multipartBoundary(ct))
+		var htmlFallback string
 		for {
 			sub, err := mr.NextPart()
 			if err != nil {
 				break
 			}
-			if body, ok := readPartBody(sub); ok {
-				return body, true
+			body, kind, ok := readPartBody(sub)
+			if !ok {
+				continue
+			}
+			if kind == "text/plain" {
+				return body, kind, true
+			}
+			if htmlFallback == "" {
+				htmlFallback = body
 			}
 		}
-		return "", false
+		if htmlFallback != "" {
+			return htmlFallback, "text/html", true
+		}
+		return "", "", false
 	}
 	if strings.HasPrefix(ct, "text/plain") || strings.HasPrefix(ct, "text/html") {
 		body, err := readTextPart(ct, part.Header.Get("Content-Transfer-Encoding"), part)
 		if err == nil && strings.TrimSpace(body) != "" {
-			return body, true
+			kind, _, _ := mime.ParseMediaType(ct)
+			return body, strings.ToLower(kind), true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // readTextPart 读取单个文本部分 (plain 直接返回, html 去标签)。
 func readTextPart(ct, encoding string, r io.Reader) (string, error) {
-	raw, err := io.ReadAll(r)
+	mediaType, params, _ := mime.ParseMediaType(ct)
+	return decodeTextBody(r, strings.ToLower(mediaType), encoding, params["charset"])
+}
+
+func decodeTextBody(r io.Reader, contentType, encoding, bodyCharset string) (string, error) {
+	var decoded io.Reader = r
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "quoted-printable":
+		decoded = quotedprintable.NewReader(decoded)
+	case "base64":
+		decoded = base64.NewDecoder(base64.StdEncoding, decoded)
+	}
+	if bodyCharset != "" && !strings.EqualFold(bodyCharset, "utf-8") && !strings.EqualFold(bodyCharset, "us-ascii") {
+		converted, err := charset.Reader(bodyCharset, decoded)
+		if err != nil {
+			return "", fmt.Errorf("不支持的邮件字符集 %s: %w", bodyCharset, err)
+		}
+		decoded = converted
+	}
+	raw, err := io.ReadAll(decoded)
 	if err != nil {
 		return "", err
 	}
-	if strings.Contains(encoding, "quoted-printable") {
-		decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(string(raw))))
-		if err == nil {
-			raw = decoded
-		}
-	}
-	if strings.HasPrefix(ct, "text/html") {
+	if strings.EqualFold(contentType, "text/html") {
 		return stripHTML(string(raw)), nil
 	}
 	return string(raw), nil
 }
 
-// stripHTML 粗略剥离 HTML 标签,保留可读文本。
-func stripHTML(html string) string {
-	// 换行标签转换行
-	html = strings.ReplaceAll(html, "<br>", "\n")
-	html = strings.ReplaceAll(html, "<br/>", "\n")
-	html = strings.ReplaceAll(html, "<br />", "\n")
-	html = strings.ReplaceAll(html, "</p>", "\n")
-	html = strings.ReplaceAll(html, "</div>", "\n")
-	html = strings.ReplaceAll(html, "</tr>", "\n")
-	html = strings.ReplaceAll(html, "<li>", "\n- ")
-	// 去掉所有标签
-	html = htmlTag.ReplaceAllString(html, "")
-	// 反转义常见实体
-	html = strings.ReplaceAll(html, "&nbsp;", " ")
-	html = strings.ReplaceAll(html, "&amp;", "&")
-	html = strings.ReplaceAll(html, "&lt;", "<")
-	html = strings.ReplaceAll(html, "&gt;", ">")
-	// 压缩多余空白
-	lines := strings.Split(html, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimSpace(l)
+func decodePreviewBody(r io.Reader, contentType, encoding, bodyCharset string) (string, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, 4096))
+	if err != nil {
+		return "", err
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "quoted-printable":
+		if decoded, decodeErr := io.ReadAll(quotedprintable.NewReader(strings.NewReader(string(raw)))); decodeErr == nil {
+			raw = decoded
+		}
+	case "base64":
+		compact := strings.NewReplacer("\r", "", "\n", "", " ", "", "\t", "").Replace(string(raw))
+		compact = compact[:len(compact)-len(compact)%4]
+		if decoded, decodeErr := base64.StdEncoding.DecodeString(compact); decodeErr == nil || len(decoded) > 0 {
+			raw = decoded
+		}
+	}
+	if bodyCharset != "" && !strings.EqualFold(bodyCharset, "utf-8") && !strings.EqualFold(bodyCharset, "us-ascii") {
+		if converted, convertErr := charset.Reader(bodyCharset, strings.NewReader(string(raw))); convertErr == nil {
+			if decoded, readErr := io.ReadAll(converted); readErr == nil {
+				raw = decoded
+			}
+		}
+	}
+	text := string(raw)
+	if strings.EqualFold(contentType, "text/html") {
+		text = stripHTML(text)
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) > 240 {
+		text = string(runes[:240])
+	}
+	return text, nil
+}
+
+// stripHTML 使用 HTML tokenizer 提取可读文本，忽略脚本/样式并保留块级换行。
+func stripHTML(source string) string {
+	z := xhtml.NewTokenizer(strings.NewReader(source))
+	var out strings.Builder
+	skipDepth := 0
+	for {
+		typeOfToken := z.Next()
+		if typeOfToken == xhtml.ErrorToken {
+			break
+		}
+		token := z.Token()
+		name := strings.ToLower(token.Data)
+		switch typeOfToken {
+		case xhtml.StartTagToken:
+			if name == "script" || name == "style" || name == "head" {
+				skipDepth++
+				continue
+			}
+			if skipDepth == 0 && (name == "br" || name == "p" || name == "div" || name == "tr" || name == "li" || name == "h1" || name == "h2" || name == "h3" || name == "h4") {
+				out.WriteByte('\n')
+			}
+		case xhtml.EndTagToken:
+			if name == "script" || name == "style" || name == "head" {
+				if skipDepth > 0 {
+					skipDepth--
+				}
+				continue
+			}
+			if skipDepth == 0 && (name == "p" || name == "div" || name == "tr" || name == "li" || name == "h1" || name == "h2" || name == "h3" || name == "h4") {
+				out.WriteByte('\n')
+			}
+		case xhtml.TextToken:
+			if skipDepth == 0 {
+				out.WriteString(stdhtml.UnescapeString(token.Data))
+			}
+		}
+	}
+	lines := strings.Split(out.String(), "\n")
+	clean := lines[:0]
+	for i, l := range lines {
+		lines[i] = strings.Join(strings.Fields(l), " ")
+		if lines[i] != "" && (len(clean) == 0 || clean[len(clean)-1] != lines[i]) {
+			clean = append(clean, lines[i])
+		}
+	}
+	return strings.TrimSpace(strings.Join(clean, "\n"))
 }

@@ -3,9 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>iCloud Distribution</title>
-    <script type="module" crossorigin src="/assets/index-eB0bZ1Yt.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BZJxp-GZ.css">
+    <meta name="theme-color" content="#080b0d" />
+    <script>
+      try {
+        const storedTheme = localStorage.getItem('icloud-relay-theme');
+        if (storedTheme === 'light' || storedTheme === 'dark') {
+          document.documentElement.dataset.theme = storedTheme;
+          document.documentElement.style.colorScheme = storedTheme;
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', storedTheme === 'light' ? '#f2f6f4' : '#080b0d');
+        }
+      } catch (_) {}
+    </script>
+    <title>iCloud 邮箱管理</title>
+    <script type="module" crossorigin src="/assets/index-BCx3WMGW.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BHkdglq3.css">
   </head>
   <body>
     <div id="root"></div>

@@ -1,329 +1,71 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, Tooltip, message } from 'antd'
-import { CopyOutlined, LinkOutlined, MailOutlined, PlusOutlined, SearchOutlined, ShareAltOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import { Account, Alias, api } from '../api/client'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api, type Account, type Alias, type AliasMetadata, type FullMailMessage, type InboxData, type MailMessage, type OrganizerGroup, type ShareLink } from '../api/client'
+import GroupFilter from '../components/GroupFilter'
+import Icon from '../components/Icon'
 import PageLayout from '../components/PageLayout'
-import AutoLoginModal from '../components/AutoLoginModal'
-import BatchCreateModal from '../components/BatchCreateModal'
-import MailReader from '../components/MailReader'
-import ShareModal from '../components/ShareModal'
+import SelectMenu from '../components/SelectMenu'
+import { Dialog, SidePanel } from '../components/Overlay'
 
-// AccountDetailPage 账号详情: 别名管理 + 收件箱 + 账号设置。
+type Tab = 'aliases' | 'disabled' | 'inbox' | 'shares'
+const PAGE_SIZE = 20
+const dateText = (date?: string) => date ? new Date(date).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+const normalizeInbox = (value: InboxData): InboxData => ({ ...value, messages: value.messages || [] })
+
 export default function AccountDetailPage({ onLogout }: { onLogout: () => void }) {
-  const { id = '' } = useParams()
-  const [account, setAccount] = useState<Account | null>(null)
-  const [aliases, setAliases] = useState<Alias[]>([])
-  const [loading, setLoading] = useState(false)
-  const [tab, setTab] = useState('aliases')
-  const [mailAlias, setMailAlias] = useState('')
-  const [loginOpen, setLoginOpen] = useState(false)
-  const [batchOpen, setBatchOpen] = useState(false)
-  const [pwdOpen, setPwdOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
-  const [newLabel, setNewLabel] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [aliasQuery, setAliasQuery] = useState('')
-  const [pwdForm] = Form.useForm()
+  const { id = '' } = useParams(); const navigate = useNavigate(); const [searchParams, setSearchParams] = useSearchParams(); const requestedAlias = searchParams.get('alias') || ''; const requestedTab = searchParams.get('tab')
+  const [account, setAccount] = useState<Account | null>(null); const [aliases, setAliases] = useState<Alias[]>([]); const [shares, setShares] = useState<ShareLink[]>([]); const [inbox, setInbox] = useState<InboxData | null>(null); const [groups, setGroups] = useState<OrganizerGroup[]>([]); const [metadata, setMetadata] = useState<Record<string, AliasMetadata>>({})
+  const [tab, setTab] = useState<Tab>(requestedTab === 'inbox' ? 'inbox' : 'aliases'); const [query, setQuery] = useState(''); const [alias, setAlias] = useState(requestedAlias); const [label, setLabel] = useState(''); const [groupFilter, setGroupFilter] = useState('all'); const [aliasPage, setAliasPage] = useState(1); const [selectedDisabled, setSelectedDisabled] = useState<string[]>([]); const [disabledDeleteConfirm, setDisabledDeleteConfirm] = useState(false); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(''); const [addOpen, setAddOpen] = useState(false); const [passwordOpen, setPasswordOpen] = useState(false); const [organizerOpen, setOrganizerOpen] = useState(false); const [editorAlias, setEditorAlias] = useState<Alias | null>(null); const [editorGroupId, setEditorGroupId] = useState(''); const [editorNote, setEditorNote] = useState(''); const [deleteTarget, setDeleteTarget] = useState<Alias | null>(null); const [groupDeleteTarget, setGroupDeleteTarget] = useState<OrganizerGroup | null>(null); const [groupName, setGroupName] = useState(''); const [renameGroupId, setRenameGroupId] = useState<string | null>(null); const [renameValue, setRenameValue] = useState(''); const [message, setMessage] = useState<FullMailMessage | null>(null); const [messageLoading, setMessageLoading] = useState(false); const [messageError, setMessageError] = useState(''); const messageRequest = useRef(0); const [shareOpen, setShareOpen] = useState(false); const [shareAlias, setShareAlias] = useState(''); const [shareLabel, setShareLabel] = useState(''); const [shareResult, setShareResult] = useState<string | null>(null); const [shareCreating, setShareCreating] = useState(false)
 
-  const loadAccount = async () => {
-    try {
-      const list = await api.listAccounts()
-      setAccount(list.find((a) => a.id === id) || null)
-    } catch (e) {
-      message.error((e as Error).message)
-    }
-  }
+  const load = async () => { setBusy(true); try { const [accounts, aliasResult, shareResultData, organizer] = await Promise.all([api.listAccounts(), api.listAliases(id), api.listShares(id), api.getOrganizer(id)]); setAccount(accounts.find((item) => item.id === id) || null); setAliases(aliasResult.aliases || []); setShares(shareResultData || []); setGroups(organizer.groups || []); setMetadata(organizer.metadata || {}) } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  useEffect(() => { load() }, [id])
+  useEffect(() => { if (requestedTab !== 'inbox') return; setTab('inbox'); setAlias(requestedAlias); setBusy(true); api.inbox(id, requestedAlias).then((value) => setInbox(normalizeInbox(value))).catch((e) => setNotice((e as Error).message)).finally(() => setBusy(false)) }, [id])
+  const groupNames = useMemo(() => Object.fromEntries(groups.map((group) => [group.id, group.name])), [groups]); const activeAliases = useMemo(() => aliases.filter((item) => item.active), [aliases]); const disabledAliases = useMemo(() => aliases.filter((item) => !item.active), [aliases]); const visibleAliases = tab === 'disabled' ? disabledAliases : activeAliases
+  const filteredAliases = useMemo(() => { const needle = query.trim().toLowerCase(); return visibleAliases.filter((item) => { const meta = metadata[item.anonymousId]; const groupMatch = groupFilter === 'all' || (groupFilter === 'ungrouped' ? !meta?.group_id : meta?.group_id === groupFilter); return groupMatch && (!needle || item.email.toLowerCase().includes(needle) || item.label.toLowerCase().includes(needle) || meta?.note?.toLowerCase().includes(needle)) }) }, [groupFilter, metadata, query, visibleAliases])
+  const totalPages = Math.max(1, Math.ceil(filteredAliases.length / PAGE_SIZE)); const pagedAliases = useMemo(() => filteredAliases.slice((aliasPage - 1) * PAGE_SIZE, aliasPage * PAGE_SIZE), [aliasPage, filteredAliases]); const aliasLoad = useMemo(() => ({ active: activeAliases.length, total: aliases.length }), [activeAliases.length, aliases.length])
+  const groupCounts = useMemo(() => { const counts: Record<string, number> = { all: visibleAliases.length, ungrouped: 0 }; visibleAliases.forEach((item) => { const groupId = metadata[item.anonymousId]?.group_id; if (groupId) counts[groupId] = (counts[groupId] || 0) + 1; else counts.ungrouped += 1 }); return counts }, [metadata, visibleAliases]); const allGroupCounts = useMemo(() => { const counts: Record<string, number> = {}; aliases.forEach((item) => { const groupId = metadata[item.anonymousId]?.group_id; if (groupId) counts[groupId] = (counts[groupId] || 0) + 1 }); return counts }, [aliases, metadata])
+  const allDisabledSelected = disabledAliases.length > 0 && disabledAliases.every((item) => selectedDisabled.includes(item.anonymousId))
+  useEffect(() => { setAliasPage(1) }, [aliases, groupFilter, metadata, query, tab]); useEffect(() => { setAliasPage((current) => Math.min(current, totalPages)) }, [totalPages]); useEffect(() => { setSelectedDisabled((current) => current.filter((selectedId) => disabledAliases.some((item) => item.anonymousId === selectedId))) }, [disabledAliases])
+  useEffect(() => { if (!notice) return undefined; const timer = window.setTimeout(() => setNotice(''), 4200); return () => window.clearTimeout(timer) }, [notice])
 
-  const loadAliases = async () => {
-    setLoading(true)
-    try {
-      const res = await api.listAliases(id)
-      setAliases(res.aliases || [])
-    } catch (e) {
-      message.error((e as Error).message)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const createAlias = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); try { const result = await api.createAlias(id, label.trim()); setNotice(`已创建 ${result.email}。`); setLabel(''); setAddOpen(false); await load() } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const openInbox = async (selectedAlias = '') => { messageRequest.current += 1; setMessage(null); setMessageError(''); setMessageLoading(false); setAlias(selectedAlias); setTab('inbox'); setSearchParams(selectedAlias ? { tab: 'inbox', alias: selectedAlias } : { tab: 'inbox' }, { replace: true }); setBusy(true); try { setInbox(normalizeInbox(await api.inbox(id, selectedAlias))) } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const openMessage = async (item: MailMessage) => { const request = ++messageRequest.current; setMessage({ ...item, body: '', content_type: '' }); setMessageError(''); if (inbox?.method !== 'imap') return; setMessageLoading(true); try { const result = await api.getMessage(id, item.id, item.folder); if (request === messageRequest.current) setMessage(result) } catch (e) { if (request === messageRequest.current) setMessageError((e as Error).message) } finally { if (request === messageRequest.current) setMessageLoading(false) } }
+  const toggleAlias = async (item: Alias) => { setBusy(true); try { if (item.active) { await api.deactivateAlias(id, item.anonymousId); setNotice(`${item.email} 已停用，可在停用邮箱中恢复。`) } else { await api.reactivateAlias(id, item.anonymousId); setNotice(`${item.email} 已恢复。`) } await load() } catch (e) { setNotice(`${item.active ? '停用' : '恢复'} ${item.email} 失败：${errorText(e)}`) } finally { setBusy(false) } }
+  const toggleDisabledSelection = (aliasId: string) => setSelectedDisabled((current) => current.includes(aliasId) ? current.filter((item) => item !== aliasId) : [...current, aliasId]); const toggleAllDisabled = () => setSelectedDisabled(allDisabledSelected ? [] : disabledAliases.map((item) => item.anonymousId))
+  const restoreDisabled = async (item: Alias) => { setBusy(true); try { await api.reactivateAlias(id, item.anonymousId); setNotice(`${item.email} 已恢复。`); await load() } catch (e) { setNotice(`恢复 ${item.email} 失败：${errorText(e)}`) } finally { setBusy(false) } }
+  const restoreSelectedDisabled = async () => { if (!selectedDisabled.length) return; setBusy(true); const results = await Promise.allSettled(selectedDisabled.map((aliasId) => api.reactivateAlias(id, aliasId))); const succeeded = results.filter((result) => result.status === 'fulfilled').length; const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected').map((result) => errorText(result.reason)); setNotice(`已恢复 ${succeeded} 个停用别名${failures.length ? `；失败详情：${failures.join('；')}` : ''}。`); setSelectedDisabled([]); await load(); setBusy(false) }
+  const deleteSelectedDisabled = async () => { if (!selectedDisabled.length) return; setBusy(true); const results = await Promise.allSettled(selectedDisabled.map((aliasId) => api.deleteAlias(id, aliasId))); const succeeded = results.filter((result) => result.status === 'fulfilled').length; const failed = results.length - succeeded; setNotice(`已删除 ${succeeded} 个停用别名${failed ? `，${failed} 个失败` : ''}。`); setSelectedDisabled([]); setDisabledDeleteConfirm(false); await load(); setBusy(false) }
+  const deleteAlias = async () => { if (!deleteTarget) return; setBusy(true); try { await api.deleteAlias(id, deleteTarget.anonymousId); setNotice(`已删除 ${deleteTarget.email}。`); setDeleteTarget(null); await load() } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const openAliasEditor = (item: Alias) => { const current = metadata[item.anonymousId]; setEditorGroupId(current?.group_id || ''); setEditorNote(current?.note || ''); setEditorAlias(item) }
+  const saveAliasMeta = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!editorAlias) return; setBusy(true); const nextMeta: AliasMetadata = { alias_id: editorAlias.anonymousId, email: editorAlias.email, group_id: editorGroupId, note: editorNote, updated_at: new Date().toISOString() }; try { await api.updateAliasMeta(id, nextMeta); setMetadata((current) => ({ ...current, [editorAlias.anonymousId]: nextMeta })); setEditorAlias(null); setNotice('别名的本地归类与备注已保存。') } catch (e) { setNotice(`保存 ${editorAlias.email} 的归类与备注失败：${errorText(e)}`) } finally { setBusy(false) } }
+  const createGroup = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const name = groupName.trim(); if (!name) return; setBusy(true); try { await api.createOrganizerGroup(id, name); setGroupName(''); setNotice('本地分组已创建。'); await load() } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const renameGroup = async (group: OrganizerGroup) => { const name = renameValue.trim(); if (!name) return; setBusy(true); try { await api.renameOrganizerGroup(id, group.id, name); setRenameGroupId(null); setNotice('本地分组已重命名。'); await load() } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const deleteGroup = async () => { if (!groupDeleteTarget) return; setBusy(true); try { await api.deleteOrganizerGroup(id, groupDeleteTarget.id); setGroupDeleteTarget(null); setNotice('分组已删除，别名仍保留为未分组。'); await load() } catch (e) { setNotice((e as Error).message) } finally { setBusy(false) } }
+  const openSharePanel = (email?: string) => { setShareAlias(email || activeAliases[0]?.email || ''); setShareLabel(''); setShareOpen(true) }; const createShare = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!shareAlias || shareCreating) return; setShareCreating(true); try { const result = await api.createShare(id, shareAlias, shareLabel.trim()); const path = result.url || `/share/${result.token}`; setShareOpen(false); setShareResult(new URL(path, window.location.origin).toString()); setNotice('分享链接已创建。'); setShares(await api.listShares(id)) } catch (e) { setNotice(`创建分享链接失败：${errorText(e)}`) } finally { setShareCreating(false) } }; const copyShare = async (item: ShareLink) => { await navigator.clipboard.writeText(`${window.location.origin}/share/${item.token}`); setNotice('分享链接已复制。') }
+  const refreshAfterPassword = (messageText: string) => { setPasswordOpen(false); setNotice(messageText); void load().then(async () => { if (tab === 'inbox') setInbox(normalizeInbox(await api.inbox(id, alias))) }) }
+  const renderAliasRow = (item: Alias, index: number) => { const meta = metadata[item.anonymousId]; const disabled = !item.active; return <div className="alias-row" key={item.anonymousId} style={{ animationDelay: `${index * 35}ms` }}>{disabled && <label className="checkbox-hit alias-select"><input type="checkbox" aria-label={`选择 ${item.email}`} checked={selectedDisabled.includes(item.anonymousId)} onChange={() => toggleDisabledSelection(item.anonymousId)} /></label>}<span className={`alias-state ${item.active ? 'on' : 'off'}`} /><div className="alias-main"><strong className="mono">{item.email}</strong><span>{item.label || '未命名'}{item.forwardTo ? ` · 转发至 ${item.forwardTo}` : ''}</span><small className="alias-local-summary">{meta?.group_id ? `分组：${groupNames[meta.group_id] || '未知分组'}` : '未分组'}{meta?.note ? ` · 备注：${meta.note}` : ''}</small></div><span className={`status status-${item.active ? 'ready' : 'disabled'}`}>{item.active ? '启用' : '已禁用'}</span><div className="alias-actions"><button className="button small secondary" onClick={() => openAliasEditor(item)}>归类与备注</button>{!disabled && <><button className="row-action" aria-label={`打开 ${item.email} 的收件箱`} onClick={() => openInbox(item.email)}><Icon name="mail" size={16} /></button><button className="row-action" aria-label={`复制 ${item.email}`} onClick={() => { navigator.clipboard.writeText(item.email); setNotice('别名已复制。') }}><Icon name="copy" size={16} /></button><button className="button small secondary" onClick={() => openSharePanel(item.email)}><Icon name="link" size={15} />分享链接</button><button className="text-button" onClick={() => toggleAlias(item)}>停用</button></>}{disabled && <><button className="button small secondary" onClick={() => restoreDisabled(item)}><Icon name="restore" size={15} />恢复</button><button className="text-button danger-text" onClick={() => setDeleteTarget(item)}>删除</button></>}</div></div> }
+  if (!account && !busy) return <PageLayout title="账号详情" showHeading={false} onLogout={onLogout}><div className="empty-state panel"><h3>该账号不可用。</h3><button className="button secondary" onClick={() => navigate('/')}><Icon name="back" size={16} />返回账号列表</button></div></PageLayout>
 
-  useEffect(() => {
-    loadAccount()
-    loadAliases()
-  }, [id])
-
-  const createOne = async () => {
-    if (creating) return // 防重复点击 (创建耗时数秒,重复点击会产生多个别名)
-    setCreating(true)
-    try {
-      const res = await api.createAlias(id, newLabel.trim())
-      message.success(`已创建: ${res.email}`)
-      setNewLabel('')
-      loadAliases()
-    } catch (e) {
-      message.error((e as Error).message)
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  const shareAlias = async (a: Alias) => {
-    try {
-      const res = await api.createShare(id, a.email, a.label)
-      const url = `${window.location.origin}${res.url}`
-      await navigator.clipboard.writeText(url)
-      message.success(`分享链接已复制: ${url}`)
-    } catch (e) {
-      message.error((e as Error).message)
-    }
-  }
-
-  const setAppPassword = async (values: { icloud_email: string; app_password: string }) => {
-    try {
-      await api.setAppPassword(id, values.icloud_email, values.app_password)
-      message.success('App 专用密码已设置并验证通过')
-      setPwdOpen(false)
-      pwdForm.resetFields()
-    } catch (e) {
-      message.error((e as Error).message)
-    }
-  }
-
-  const viewMail = (alias: string) => {
-    setMailAlias(alias)
-    setTab('inbox')
-  }
-
-  // 按邮箱地址/标签过滤别名 (本地即时过滤)
-  const filteredAliases = aliasQuery.trim()
-    ? aliases.filter((a) => {
-        const q = aliasQuery.trim().toLowerCase()
-        return a.email.toLowerCase().includes(q) || (a.label || '').toLowerCase().includes(q)
-      })
-    : aliases
-
-  return (
-    <PageLayout title={account ? `账号: ${account.name}` : '账号详情'} onLogout={onLogout}>
-      <Card
-        size="small"
-        className="hme-card" style={{ marginBottom: 16 }}
-        title={
-          <Space>
-            <span>{account?.real_email || account?.icloud_email || id}</span>
-            {account?.status === 'active' ? <Tag color="success">正常</Tag> : <Tag color="warning">{account?.status}</Tag>}
-            {aliases[0]?.forwardTo && (
-              <Tooltip title="HME 别名邮件的转发目标 (账号级设置)">
-                <Tag color="blue">转发至 {aliases[0].forwardTo}</Tag>
-              </Tooltip>
-            )}
-          </Space>
-        }
-        extra={
-          <Space>
-            <Button icon={<ThunderboltOutlined />} type="primary" ghost onClick={() => setLoginOpen(true)}>
-              自动授权
-            </Button>
-            <Button onClick={() => setPwdOpen(true)}>设置 App 密码</Button>
-            <Popconfirm
-              title="把所有别名的转发地址改为 iCloud 邮箱?"
-              description="改后别名邮件进入 iCloud 收件箱,面板可直接读取"
-              onConfirm={() =>
-                api
-                  .setForwardTo(id, account?.icloud_email || '')
-                  .then(() => {
-                    message.success('转发地址已修改')
-                    loadAliases()
-                  })
-                  .catch((e) => message.error((e as Error).message))
-              }
-            >
-              <Button disabled={!account?.icloud_email}>转发至 iCloud 邮箱</Button>
-            </Popconfirm>
-          </Space>
-        }
-      />
-
-      <Tabs
-        activeKey={tab}
-        onChange={setTab}
-        items={[
-          {
-            key: 'aliases',
-            label: `别名管理 (${aliases.length})`,
-            children: (
-              <Card
-                size="small"
-                className="hme-card"
-                extra={
-                  <Space wrap>
-                    <Input
-                      placeholder="搜索邮箱 / 标签"
-                      prefix={<SearchOutlined style={{ color: '#bbb' }} />}
-                      allowClear
-                      style={{ width: 200 }}
-                      value={aliasQuery}
-                      onChange={(e) => setAliasQuery(e.target.value)}
-                    />
-                    <Input
-                      placeholder="标签 (可选)"
-                      style={{ width: 140 }}
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      onPressEnter={createOne}
-                    />
-                    <Button type="primary" icon={<PlusOutlined />} loading={creating} onClick={createOne}>
-                      {creating ? '创建中...' : '新建别名'}
-                    </Button>
-                    <Button onClick={() => setBatchOpen(true)}>批量创建</Button>
-                    <Button icon={<LinkOutlined />} onClick={() => setShareOpen(true)}>
-                      分享链接
-                    </Button>
-                  </Space>
-                }
-              >
-                <Table
-                  rowKey="anonymousId"
-                  size="small"
-                  loading={loading}
-                  dataSource={filteredAliases}
-                  pagination={{ pageSize: 20 }}
-                  columns={[
-                    {
-                      title: '邮箱地址',
-                      dataIndex: 'email',
-                      render: (v: string) => (
-                        <Space>
-                          {v}
-                          <Tooltip title="复制">
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<CopyOutlined />}
-                              onClick={() => {
-                                navigator.clipboard.writeText(v)
-                                message.success('已复制')
-                              }}
-                            />
-                          </Tooltip>
-                        </Space>
-                      ),
-                    },
-                    { title: '标签', dataIndex: 'label' },
-                    {
-                      title: '状态',
-                      dataIndex: 'active',
-                      render: (v: boolean) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>),
-                    },
-                    {
-                      title: '操作',
-                      key: 'actions',
-                      render: (_, a) => (
-                        <Space>
-                          <Button size="small" icon={<MailOutlined />} onClick={() => viewMail(a.email)}>
-                            邮件
-                          </Button>
-                          <Button size="small" icon={<ShareAltOutlined />} onClick={() => shareAlias(a)}>
-                            分享
-                          </Button>
-                          {a.active ? (
-                            <Button size="small" onClick={() => api.deactivateAlias(id, a.anonymousId).then(loadAliases)}>
-                              停用
-                            </Button>
-                          ) : (
-                            <Button size="small" onClick={() => api.reactivateAlias(id, a.anonymousId).then(loadAliases)}>
-                              激活
-                            </Button>
-                          )}
-                          <Popconfirm
-                            title="确认删除该别名? 不可恢复"
-                            onConfirm={() => api.deleteAlias(id, a.anonymousId).then(loadAliases)}
-                          >
-                            <Button size="small" danger>
-                              删除
-                            </Button>
-                          </Popconfirm>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'inbox',
-            label: '收件箱',
-            children: (
-              <Card size="small" className="hme-card">
-                <Space style={{ marginBottom: 16 }}>
-                  <span>邮件范围:</span>
-                  <Select
-                    style={{ width: 320 }}
-                    value={mailAlias}
-                    onChange={setMailAlias}
-                    options={[
-                      { value: '', label: '整个收件箱' },
-                      ...aliases.map((a) => ({ value: a.email, label: `${a.email}${a.label ? ` (${a.label})` : ''}` })),
-                    ]}
-                  />
-                  {mailAlias && (
-                    <Button
-                      icon={<ShareAltOutlined />}
-                      onClick={() => shareAlias(aliases.find((a) => a.email === mailAlias) || { email: mailAlias } as Alias)}
-                    >
-                      分享此邮箱
-                    </Button>
-                  )}
-                </Space>
-                <MailReader key={mailAlias} accountId={id} alias={mailAlias} />
-              </Card>
-            ),
-          },
-        ]}
-      />
-
-      {loginOpen && (
-        <AutoLoginModal
-          accountId={id}
-          accountName={account?.name || id}
-          open
-          onClose={(refreshed) => {
-            setLoginOpen(false)
-            if (refreshed) loadAccount()
-          }}
-        />
-      )}
-      <BatchCreateModal
-        accountId={id}
-        open={batchOpen}
-        onClose={(created) => {
-          setBatchOpen(false)
-          if (created) loadAliases()
-        }}
-      />
-      <ShareModal accountId={id} open={shareOpen} onClose={() => setShareOpen(false)} />
-
-      <Modal
-        title="设置 App 专用密码 (IMAP 读邮件)"
-        open={pwdOpen}
-        onCancel={() => setPwdOpen(false)}
-        onOk={() => pwdForm.submit()}
-        destroyOnClose
-      >
-        <Form form={pwdForm} layout="vertical" onFinish={setAppPassword}>
-          <Form.Item name="icloud_email" label="iCloud 邮箱" rules={[{ required: true, message: '必填' }]}>
-            <Input placeholder="you@icloud.com" />
-          </Form.Item>
-          <Form.Item
-            name="app_password"
-            label="App 专用密码"
-            rules={[{ required: true, message: '必填' }]}
-            extra="在 appleid.apple.com → 登录和安全 → App 专用密码 生成"
-          >
-            <Input.Password placeholder="xxxx-xxxx-xxxx-xxxx" />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </PageLayout>
-  )
+  return <PageLayout title="账号详情" eyebrow="账号详情" showHeading={false} onLogout={onLogout}>
+    {notice && <div className="notice toast" role="status" aria-live="polite"><span>{notice}</span><button className="text-button" onClick={() => setNotice('')}>关闭</button></div>}
+    <section className="detail-hero panel"><button className="back-link" onClick={() => navigate(account?.status === 'disabled' ? '/disabled' : '/')} aria-label="返回账号列表"><Icon name="back" size={16} /></button><div className="detail-identity"><div><h1>{account?.name}</h1><span className="mono detail-email">{account?.real_email || account?.icloud_email || account?.id}</span></div></div><div className="detail-state"><span className={`status status-${account?.status === 'active' ? 'ready' : account?.status === 'disabled' ? 'disabled' : 'pending'}`}>{account?.status === 'active' ? '正常' : account?.status === 'disabled' ? '已禁用' : '待处理'}</span><strong className="alias-count">{aliasLoad.active} / {aliasLoad.total} 个别名</strong><span className="detail-meta">{account?.host || 'icloud.com'}</span><button className="button small secondary" onClick={() => setPasswordOpen(true)}><Icon name="settings" size={15} />App 专用密码</button></div></section>
+    <section className="panel detail-panel"><div className="tabs" role="tablist"><button className={tab === 'aliases' ? 'active' : ''} onClick={() => setTab('aliases')} role="tab" aria-selected={tab === 'aliases'}><Icon name="link" size={16} />活跃别名 <span>{activeAliases.length}</span></button><button className={tab === 'disabled' ? 'active' : ''} onClick={() => setTab('disabled')} role="tab" aria-selected={tab === 'disabled'}><Icon name="archive" size={16} />停用邮箱 <span>{disabledAliases.length}</span></button><button className={tab === 'inbox' ? 'active' : ''} onClick={() => openInbox(alias)} role="tab" aria-selected={tab === 'inbox'}><Icon name="mail" size={16} />收件箱 <span>{inbox?.count || '—'}</span></button><button className={tab === 'shares' ? 'active' : ''} onClick={() => setTab('shares')} role="tab" aria-selected={tab === 'shares'}><Icon name="copy" size={16} />分享 <span>{shares.length}</span></button></div>
+      {(tab === 'aliases' || tab === 'disabled') && <><div className="panel-header compact"><div><span className="eyebrow">{tab === 'disabled' ? '已停用地址' : '正在使用'}</span><h2>{tab === 'disabled' ? '停用邮箱' : '别名清单'}</h2></div><div className="inline-actions alias-toolbar"><GroupFilter groups={groups} value={groupFilter} counts={groupCounts} onChange={setGroupFilter} /><button className="button secondary" onClick={() => setOrganizerOpen(true)}><Icon name="settings" size={16} />管理分组</button><label className="search-field compact-search"><Icon name="search" size={16} /><input aria-label={tab === 'disabled' ? '搜索停用邮箱' : '搜索活跃别名'} placeholder={tab === 'disabled' ? '搜索停用邮箱' : '搜索别名'} value={query} onChange={(event) => setQuery(event.target.value)} /></label>{tab === 'aliases' && <button className="button primary" onClick={() => setAddOpen(true)}><Icon name="plus" size={16} />新建别名</button>}</div></div><div className="organizer-caption">分组和备注仅保存在本地，用于整理，不会同步到 iCloud。</div>{tab === 'disabled' && <div className="disabled-alias-toolbar"><label className="checkbox-hit"><input type="checkbox" aria-label="全选停用别名" checked={allDisabledSelected} onChange={toggleAllDisabled} /></label><span>{selectedDisabled.length ? `已选 ${selectedDisabled.length} 个` : '选择停用别名'}</span>{selectedDisabled.length > 0 && <><button className="button secondary" onClick={restoreSelectedDisabled}><Icon name="restore" size={15} />批量恢复</button><button className="danger-ghost" onClick={() => setDisabledDeleteConfirm(true)}><Icon name="trash" size={15} />批量删除</button><button className="text-button" onClick={() => setSelectedDisabled([])}>清除选择</button></>}</div>}<div className="alias-list">{filteredAliases.length === 0 ? <div className="empty-state small-empty"><h3>{query || groupFilter !== 'all' ? '没有匹配的别名。' : tab === 'disabled' ? '没有停用邮箱。' : '还没有活跃别名。'}</h3><p>{query || groupFilter !== 'all' ? '请尝试其他筛选条件。' : tab === 'disabled' ? '停用的别名会保留在这里，可随时恢复。' : '创建一个私密地址即可开始。'}</p></div> : pagedAliases.map(renderAliasRow)}</div>{totalPages > 1 && <nav className="pagination" aria-label="别名分页"><button className="button secondary" disabled={aliasPage === 1} onClick={() => setAliasPage((current) => Math.max(1, current - 1))}>上一页</button><span aria-live="polite">第 {aliasPage} / {totalPages} 页</span><button className="button secondary" disabled={aliasPage === totalPages} onClick={() => setAliasPage((current) => Math.min(totalPages, current + 1))}>下一页</button></nav>}</>}
+      {tab === 'inbox' && <div className="inbox-view"><div className="panel-header compact"><div><span className="eyebrow">最近收件</span><h2>{alias || '全部别名'}</h2></div><button className="button secondary" onClick={() => openInbox(alias)}><Icon name="grid" size={16} />刷新</button></div>{inbox?.method === 'web_api' && <div className="inline-banner">当前为 Web API 模式，只返回邮件摘要。添加 App 专用密码后可通过 IMAP 阅读正文。</div>}{!inbox || !inbox.messages?.length ? <div className="empty-state small-empty"><h3>{busy ? '正在读取邮件…' : '这段时间没有新邮件。'}</h3><p>{busy ? '正在读取邮件标题，请稍候。' : '最近 7 天收到的邮件会显示在这里。'}</p></div> : <div className="inbox-split"><div className="mail-list inbox-mail-list">{inbox.messages.map((item) => <button className={`mail-row mail-row-button ${message?.id === item.id && message?.folder === item.folder ? 'selected' : ''}`} key={`${item.folder}-${item.id}`} onClick={() => openMessage(item)} aria-pressed={message?.id === item.id && message?.folder === item.folder}><div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div><div><strong>{item.subject || '（无主题）'}</strong><span>{item.from}</span>{item.preview && <small>{item.preview}</small>}</div><time>{dateText(item.date)}</time></button>)}</div><aside className="inbox-reader" aria-live="polite">{!message ? <div className="inbox-reader-empty"><Icon name="mail" size={22} /><strong>选择一封邮件</strong><span>点击后才会读取正文，并直接显示在这里。</span></div> : <><header className="inbox-reader-header"><span className="eyebrow">邮件正文</span><h3>{message.subject || '（无主题）'}</h3><p>{message.from}<br />{dateText(message.date)}</p></header>{messageLoading ? <div className="inbox-reader-state" role="status"><span className="message-loading-bar" /><strong>正在读取正文</strong><small>请稍候，可以直接选择其他邮件。</small></div> : messageError ? <div className="inbox-reader-state error-state" role="alert"><strong>正文读取失败</strong><small>{messageError}</small><button className="button secondary" onClick={() => openMessage(message)}>重新读取</button></div> : inbox.method === 'web_api' ? <div className="inbox-reader-state"><strong>当前只有邮件摘要</strong><small>添加 App 专用密码后可查看完整正文。</small></div> : <div className="inbox-reader-body">{message.body || '这封邮件没有可显示的正文。'}</div>}</>}</aside></div>}</div>}
+      {tab === 'shares' && <div><div className="panel-header compact"><div><span className="eyebrow">只读访问</span><h2>分享链接</h2></div><button className="button primary" onClick={() => openSharePanel()} disabled={activeAliases.length === 0}><Icon name="plus" size={16} />创建分享链接</button></div>{shares.length === 0 ? <div className="empty-state small-empty"><h3>还没有分享链接。</h3><p>需要共享时，可以为活跃别名创建只读链接。</p></div> : <div className="share-list">{shares.map((item) => <div className="share-row" key={item.token}><div><strong className="mono">{item.alias}</strong><span>{item.label || '未命名'} · 创建于 {dateText(item.created_at)}</span></div><div><button className="button small secondary" onClick={() => copyShare(item)}><Icon name="copy" size={15} />复制</button><button className="text-button danger-text" onClick={async () => { await api.deleteShare(item.token); await load() }}>撤销</button></div></div>)}</div>}</div>}
+    </section>
+    <SidePanel open={addOpen} title="创建别名" onClose={() => setAddOpen(false)}><form className="drawer-form" onSubmit={createAlias}><p className="form-intro">在 <span className="mono">{account?.name}</span> 下创建新的隐藏邮箱地址。</p><label className="field"><span>标签</span><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="例如：供应商注册" autoFocus /><small>标签用于之后快速定位地址。</small></label><div className="drawer-actions"><button type="button" className="button secondary" onClick={() => setAddOpen(false)}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '创建中…' : '创建别名'}<Icon name="arrow" size={16} /></button></div></form></SidePanel>
+    <SidePanel open={passwordOpen} title="添加 App 专用密码" onClose={() => setPasswordOpen(false)}><AppPasswordForm accountId={id} account={account} onDone={refreshAfterPassword} /></SidePanel>
+    <SidePanel open={shareOpen} title="创建分享链接" onClose={() => setShareOpen(false)}><form className="drawer-form" onSubmit={createShare}><p className="form-intro">分享链接只读访问收件箱。请只发送给可信的人。</p><SelectMenu value={shareAlias} options={activeAliases.map((item) => ({ value: item.email, label: item.email }))} onChange={setShareAlias} ariaLabel="选择要分享的活跃别名" className="field-select-menu" searchable searchPlaceholder="搜索邮箱地址" /><label className="field"><span>链接标签 <small>可选</small></span><input value={shareLabel} onChange={(event) => setShareLabel(event.target.value)} placeholder="例如：供应商收件箱" /></label><div className="drawer-actions"><button type="button" className="button secondary" onClick={() => setShareOpen(false)}>取消</button><button className="button primary" type="submit" disabled={shareCreating || !shareAlias}>{shareCreating ? '创建中…' : '创建链接'}<Icon name="link" size={16} /></button></div></form></SidePanel>
+    <SidePanel open={organizerOpen} title="管理本地分组" onClose={() => setOrganizerOpen(false)}><div className="group-manager"><p className="group-manager-copy">分组只保存在本项目中，不会同步到 iCloud，也不会改变邮箱状态。</p><form className="group-create-form" onSubmit={createGroup}><label className="field"><span>新分组名称</span><input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="例如：账单、测试、客户" autoFocus /></label><button className="button primary" type="submit" disabled={busy}><Icon name="plus" size={16} />创建分组</button></form><div className="group-list-heading"><span>分组</span><span>别名数</span></div><div className="group-list">{groups.length === 0 ? <p className="group-empty">还没有自定义分组。</p> : groups.map((group) => <div className="group-row" key={group.id}>{renameGroupId === group.id ? <form className="group-rename" onSubmit={(event) => { event.preventDefault(); void renameGroup(group) }}><input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} aria-label={`重命名 ${group.name}`} autoFocus /><button className="row-action" aria-label="保存分组名称"><Icon name="check" size={16} /></button><button className="row-action" type="button" aria-label="取消重命名" onClick={() => setRenameGroupId(null)}><Icon name="close" size={16} /></button></form> : <><div><strong>{group.name}</strong><small>{allGroupCounts[group.id] || 0} 个别名</small></div><div><button className="row-action" aria-label={`重命名 ${group.name}`} onClick={() => { setRenameGroupId(group.id); setRenameValue(group.name) }}><Icon name="settings" size={16} /></button><button className="row-action" aria-label={`删除 ${group.name}`} onClick={() => setGroupDeleteTarget(group)}><Icon name="trash" size={16} /></button></div></>}</div>)}</div></div></SidePanel>
+    <SidePanel open={editorAlias !== null} title="归类与备注" onClose={() => setEditorAlias(null)}><form className="drawer-form" onSubmit={saveAliasMeta}><p className="form-intro">只修改本项目中的整理信息，不会改变 iCloud 别名。</p><p className="editor-address mono">{editorAlias?.email}</p><SelectMenu value={editorGroupId} options={[{ value: '', label: '未分组' }, ...groups.map((group) => ({ value: group.id, label: group.name }))]} onChange={setEditorGroupId} ariaLabel="选择本地分组" className="field-select-menu" searchable searchPlaceholder="搜索分组" /><label className="field"><span>备注</span><textarea rows={5} value={editorNote} onChange={(event) => setEditorNote(event.target.value)} placeholder="写下这个地址的用途或维护提示" /></label><div className="drawer-actions"><button className="button secondary" type="button" onClick={() => setEditorAlias(null)}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '保存中…' : '保存本地信息'}<Icon name="check" size={16} /></button></div></form></SidePanel>
+    <Dialog open={shareResult !== null} title="分享链接已创建" onClose={() => setShareResult(null)}><div className="dialog-body"><p className="dialog-lead">请复制并发送给需要只读访问的人。</p><p className="share-result-url mono">{shareResult}</p><div className="dialog-actions"><button className="button secondary" onClick={() => setShareResult(null)}>关闭</button><button className="button primary" onClick={() => { if (shareResult) { navigator.clipboard.writeText(shareResult); setNotice('分享链接已复制。') } }}><Icon name="copy" size={15} />复制链接</button></div></div></Dialog>
+    <Dialog open={deleteTarget !== null} title="删除这个别名？" onClose={() => setDeleteTarget(null)}><div className="dialog-body"><div className="dialog-warning destructive"><Icon name="trash" size={20} /><div><strong>此操作无法撤销。</strong><p><span className="mono">{deleteTarget?.email}</span> 及其本地记录会从此账号中删除。</p></div></div><div className="dialog-actions"><button className="button secondary" onClick={() => setDeleteTarget(null)}>取消</button><button className="button danger" disabled={busy} onClick={deleteAlias}>{busy ? '删除中…' : '确认删除'}</button></div></div></Dialog>
+    <Dialog open={disabledDeleteConfirm} title="删除所选停用邮箱？" onClose={() => setDisabledDeleteConfirm(false)}><div className="dialog-body"><div className="dialog-warning destructive"><Icon name="trash" size={20} /><div><strong>此操作无法撤销。</strong><p>将永久删除所选的 {selectedDisabled.length} 个停用别名及其本地记录。</p></div></div><div className="dialog-actions"><button className="button secondary" onClick={() => setDisabledDeleteConfirm(false)}>取消</button><button className="button danger" disabled={busy} onClick={deleteSelectedDisabled}>{busy ? '删除中…' : '确认删除'}</button></div></div></Dialog>
+    <Dialog open={groupDeleteTarget !== null} title="删除这个本地分组？" onClose={() => setGroupDeleteTarget(null)}><div className="dialog-body"><div className="dialog-warning"><Icon name="archive" size={20} /><div><strong>别名不会被删除。</strong><p>这里只会移除本地分组；原有别名仍保留，只会变为未分组。</p></div></div><div className="dialog-actions"><button className="button secondary" onClick={() => setGroupDeleteTarget(null)}>取消</button><button className="button danger" disabled={busy} onClick={deleteGroup}>{busy ? '删除中…' : '确认删除分组'}</button></div></div></Dialog>
+  </PageLayout>
 }
+
+function AppPasswordForm({ accountId, account, onDone }: { accountId: string; account: Account | null; onDone: (message: string) => void }) { const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const savedEmail = account?.icloud_email || ''; const defaultEmail = /@(icloud\.com|me\.com|mac\.com)$/i.test(savedEmail) ? savedEmail : ''; const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setError(''); const values = Object.fromEntries(new FormData(event.currentTarget).entries()) as Record<string, string>; try { await api.setAppPassword(accountId, values.email, values.password); onDone('App 专用密码验证通过，已启用 IMAP 阅读。') } catch (e) { setError((e as Error).message) } finally { setBusy(false) } }; return <form className="drawer-form" onSubmit={submit}><p className="form-intro">使用 Apple 生成的 App 专用密码，启用完整的 IMAP 邮件阅读。这里不能使用 Gmail 地址或 Apple ID 登录密码。</p><label className="field"><span>iCloud 邮箱</span><input name="email" type="email" defaultValue={defaultEmail} placeholder="name@icloud.com" pattern=".+@(icloud\.com|me\.com|mac\.com)" title="请输入 @icloud.com、@me.com 或 @mac.com 邮箱" autoComplete="username" required /><small>填写实际的 iCloud 邮箱，不是 Apple ID 的 Gmail 登录地址。</small></label><label className="field"><span>App 专用密码</span><input name="password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autoComplete="current-password" required /><small>在 Apple 账户网站的“登录与安全性”中生成，不是你的 Apple ID 密码。</small></label>{error && <div className="form-error" role="alert">{error}</div>}<div className="drawer-actions"><button className="button primary" type="submit" disabled={busy}>{busy ? '验证中…' : '验证密码'}<Icon name="check" size={16} /></button></div></form> }

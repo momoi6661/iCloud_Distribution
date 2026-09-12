@@ -1,6 +1,10 @@
 package account
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseCookieInput(t *testing.T) {
 	tests := []struct {
@@ -135,5 +139,141 @@ func TestManager_NewLoginClient_NoEmail(t *testing.T) {
 	}
 	if client == nil {
 		t.Error("client 不应为 nil")
+	}
+}
+
+func TestManager_DeactivateRestorePersistsAndBlocksUse(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	acc, _ := m.AddAccount("测试", "", "", "")
+	if err := m.DeactivateAccount(acc.ID); err != nil {
+		t.Fatalf("DeactivateAccount: %v", err)
+	}
+	got, _ := m.GetAccount(acc.ID)
+	if got.Status != statusDisabled {
+		t.Fatalf("状态 = %q, 期望 disabled", got.Status)
+	}
+	if _, _, err := m.NewLoginClient(acc.ID); err == nil {
+		t.Fatal("disabled 账号不应允许登录")
+	}
+	if len(m.ListDisabledAccounts()) != 1 {
+		t.Fatal("禁用列表应包含账号")
+	}
+
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatalf("重新加载 accounts.json: %v", err)
+	}
+	if got, _ := m2.GetAccount(acc.ID); got.Status != statusDisabled {
+		t.Fatalf("重载状态 = %q, 期望 disabled", got.Status)
+	}
+	if err := m2.RestoreAccount(acc.ID); err != nil {
+		t.Fatalf("RestoreAccount: %v", err)
+	}
+	if got, _ := m2.GetAccount(acc.ID); got.Status != "pending" {
+		t.Fatalf("恢复无 Cookie 账号状态 = %q, 期望 pending", got.Status)
+	}
+}
+
+func TestManager_BatchAccountOperations(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	a, _ := m.AddAccount("a", "", "", "")
+	b, _ := m.AddAccount("b", "", "", "")
+	changed, already, missing, err := m.BatchDeactivate([]string{a.ID, b.ID, "missing"})
+	if err != nil || changed != 2 || already != 0 || missing != 1 {
+		t.Fatalf("批量禁用结果 = %d/%d/%d, err=%v", changed, already, missing, err)
+	}
+	changed, already, missing, err = m.BatchDeactivate([]string{a.ID, "missing"})
+	if err != nil || changed != 0 || already != 1 || missing != 1 {
+		t.Fatalf("重复批量禁用结果 = %d/%d/%d, err=%v", changed, already, missing, err)
+	}
+	if _, _, err := m.BatchRemove([]string{a.ID, a.ID}); err == nil {
+		t.Fatal("批量删除重复 ID 应返回错误")
+	}
+	deleted, missing, err := m.BatchRemove([]string{a.ID, "missing"})
+	if err != nil || deleted != 1 || missing != 1 {
+		t.Fatalf("批量删除结果 = %d/%d, err=%v", deleted, missing, err)
+	}
+}
+
+func TestManager_OrganizerPersistenceAndGroupDeletion(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	acc, _ := m.AddAccount("local", "", "", "")
+	group, err := m.CreateGroup(acc.ID, "  Friends  ")
+	if err != nil || group.Name != "Friends" {
+		t.Fatalf("CreateGroup = %+v, err=%v", group, err)
+	}
+	meta, err := m.UpdateAliasMetadata(acc.ID, AliasMetadata{AliasID: "alias-1", Email: " a@example.com ", GroupID: group.ID, Note: " note "})
+	if err != nil || meta.Email != "a@example.com" || meta.Note != "note" || meta.UpdatedAt == "" {
+		t.Fatalf("UpdateAliasMetadata = %+v, err=%v", meta, err)
+	}
+	if err := m.DeleteGroup(acc.ID, group.ID); err != nil {
+		t.Fatalf("DeleteGroup: %v", err)
+	}
+	groups, metadata, _ := m.Organizer(acc.ID)
+	if len(groups) != 0 || metadata["alias-1"].GroupID != "" {
+		t.Fatalf("删除分组后 organizer = groups=%v metadata=%v", groups, metadata)
+	}
+	m2, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, metadata, _ = m2.Organizer(acc.ID)
+	if metadata["alias-1"].Note != "note" || metadata["alias-1"].GroupID != "" {
+		t.Fatalf("重载 metadata = %+v", metadata["alias-1"])
+	}
+}
+
+func TestManager_OrganizerLoadsOldAccountsJSON(t *testing.T) {
+	dir := t.TempDir()
+	raw := `{"accounts":{"acc_old":{"id":"acc_old","name":"old","status":"active"}},"updated_at":"2020-01-01T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(dir, "accounts.json"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups, metadata, err := m.Organizer("acc_old")
+	if err != nil || len(groups) != 0 || len(metadata) != 0 {
+		t.Fatalf("旧格式 organizer = %v/%v, err=%v", groups, metadata, err)
+	}
+}
+
+func TestManager_PersistAppPasswordUpdatesCurrentAccount(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := NewManager(dir)
+	acc, _ := m.AddAccount("mail", "", "", "")
+	if err := m.persistAppPassword(acc.ID, "icloud@example.com", "app-secret"); err != nil {
+		t.Fatalf("persistAppPassword: %v", err)
+	}
+	got, ok := m.GetAccount(acc.ID)
+	if !ok || got.ICloudEmail != "icloud@example.com" || got.AppPassword != "app-secret" {
+		t.Fatalf("保存后的账号 = %+v", got)
+	}
+	reloaded, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = reloaded.GetAccount(acc.ID)
+	if !ok || got.ICloudEmail != "icloud@example.com" || got.AppPassword != "app-secret" {
+		t.Fatalf("重载后的账号 = %+v", got)
+	}
+}
+
+func TestIsICloudDomain(t *testing.T) {
+	tests := map[string]bool{
+		"owner@icloud.com":          true,
+		"OWNER@ME.COM":              true,
+		"owner@mac.com":             true,
+		"owner@gmail.com":           false,
+		"owner@icloud.com.evil.test": false,
+		"icloud.com":                false,
+	}
+	for email, want := range tests {
+		if got := isICloudDomain(email); got != want {
+			t.Errorf("isICloudDomain(%q) = %v, want %v", email, got, want)
+		}
 	}
 }

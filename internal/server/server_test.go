@@ -277,3 +277,107 @@ func TestSPAFallback(t *testing.T) {
 		t.Errorf("无前端资源时应返回 503, 实际 %d", w.Code)
 	}
 }
+
+func TestAccountDisableRestoreAndBatchEndpoints(t *testing.T) {
+	s := newTestServer(t, "")
+	h := s.Handler()
+	create := func(name string) string {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/accounts", strings.NewReader(`{"name":"`+name+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("创建账号失败: %d %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		return resp.Data.ID
+	}
+	a, b := create("a"), create("b")
+
+	post := func(path, body string) (int, string) {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, req)
+		return w.Code, w.Body.String()
+	}
+	if code, body := post("/api/accounts/"+a+"/deactivate", `{}`); code != http.StatusOK {
+		t.Fatalf("禁用失败: %d %s", code, body)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts/disabled", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), a) {
+		t.Fatalf("禁用列表异常: %d %s", w.Code, w.Body.String())
+	}
+	if code, body := post("/api/accounts/"+a+"/restore", `{}`); code != http.StatusOK || !strings.Contains(body, "pending") {
+		t.Fatalf("恢复失败: %d %s", code, body)
+	}
+	if code, body := post("/api/accounts/batch/deactivate", `{"ids":["`+a+`","`+b+`","missing"]}`); code != http.StatusOK || !strings.Contains(body, `"changed":2`) || !strings.Contains(body, `"not_found":1`) {
+		t.Fatalf("批量禁用结果异常: %d %s", code, body)
+	}
+	if code, body := post("/api/accounts/batch/delete", `{"ids":["`+a+`","`+b+`"]}`); code != http.StatusOK || !strings.Contains(body, `"deleted":2`) {
+		t.Fatalf("批量删除结果异常: %d %s", code, body)
+	}
+	if code, _ := post("/api/accounts/batch/delete", `{"ids":[" "]}`); code != http.StatusBadRequest {
+		t.Fatalf("空白 ID 应返回 400, 实际 %d", code)
+	}
+}
+
+func TestOrganizerRoutesAndValidation(t *testing.T) {
+	s := newTestServer(t, "")
+	h := s.Handler()
+	request := func(method, path, body string) (int, string) {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(w, req)
+		return w.Code, w.Body.String()
+	}
+	code, body := request("POST", "/api/accounts", `{"name":"organizer"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("创建账号失败: %d %s", code, body)
+	}
+	var created struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	json.Unmarshal([]byte(body), &created)
+	id := created.Data.ID
+	if code, _ = request("POST", "/api/accounts/"+id+"/groups", `{"name":"  Team  "}`); code != http.StatusCreated {
+		t.Fatalf("创建组状态 = %d", code)
+	}
+	var groupResp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_, body = request("POST", "/api/accounts/"+id+"/groups", `{"name":"Second"}`)
+	json.Unmarshal([]byte(body), &groupResp)
+	groupID := groupResp.Data.ID
+	if code, _ = request("PUT", "/api/accounts/"+id+"/alias-meta", `{"alias_id":"a1","group_id":"missing"}`); code != http.StatusNotFound {
+		t.Fatalf("不存在组应返回 404, 实际 %d", code)
+	}
+	if code, _ = request("PUT", "/api/accounts/"+id+"/alias-meta", `{"alias_id":"a1","group_id":"`+groupID+`","note":" x "}`); code != http.StatusOK {
+		t.Fatalf("更新元数据状态 = %d", code)
+	}
+	if code, _ = request("DELETE", "/api/accounts/"+id+"/groups/"+groupID, ``); code != http.StatusOK {
+		t.Fatalf("删除组状态 = %d", code)
+	}
+	if code, body = request("GET", "/api/accounts/"+id+"/organizer", ``); code != http.StatusOK || strings.Contains(body, `"group_id":"`+groupID+`"`) {
+		t.Fatalf("组删除后元数据异常: %d %s", code, body)
+	}
+	if code, _ = request("POST", "/api/accounts/"+id+"/groups", `{"name":"   "}`); code != http.StatusBadRequest {
+		t.Fatalf("空组名应返回 400, 实际 %d", code)
+	}
+	if code, _ = request("GET", "/api/accounts/no-such/organizer", ``); code != http.StatusNotFound {
+		t.Fatalf("不存在账号应返回 404, 实际 %d", code)
+	}
+}
