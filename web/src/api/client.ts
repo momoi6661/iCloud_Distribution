@@ -45,6 +45,8 @@ export interface Account {
   last_validated: string
   last_error?: string
   created_at: string
+  has_cookies?: boolean
+  has_app_password?: boolean
 }
 
 export interface Alias {
@@ -63,6 +65,7 @@ export interface MailMessage {
   subject: string
   date: string
   preview: string
+  code?: string
   folder?: string
 }
 
@@ -193,5 +196,6 @@ export const api = {
   publicShareMessage: (token: string, uid: string, folder?: string) => request<FullMailMessage>('GET', `/api/public/share/${token}/message?uid=${uid}${folder ? `&folder=${folder}` : ''}`),
 
   inbox: (accountId: string, alias: string, limit = 20, days = 7) => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}`),
+  inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
   getMessage: (accountId: string, uid: string, folder?: string) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${folder}` : ''}`),
 }

@@ -34,8 +34,8 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
         </div>
         <nav className="sidebar-nav">
           <p className="nav-label">工作区</p>
-          <button className={`nav-item ${active === 'accounts' ? 'active' : ''}`} onClick={() => go('/')}><Icon name="grid" /><span>活跃账号</span><span className="nav-key">1</span></button>
-          <button className={`nav-item ${active === 'disabled' ? 'active' : ''}`} onClick={() => go('/disabled')}><Icon name="archive" /><span>禁用账号</span><span className="nav-key">2</span></button>
+          <button className={`nav-item ${active === 'accounts' ? 'active' : ''}`} onClick={() => go('/')}><Icon name="grid" /><span>活跃账号</span></button>
+          <button className={`nav-item ${active === 'disabled' ? 'active' : ''}`} onClick={() => go('/disabled')}><Icon name="archive" /><span>禁用账号</span></button>
         </nav>
         <div className="sidebar-bottom">
           <button className="nav-item logout-item" onClick={logout}><Icon name="logout" /><span>退出登录</span></button>

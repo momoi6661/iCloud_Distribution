@@ -36,6 +36,7 @@ type Message struct {
 	Subject string `json:"subject"`
 	Date    string `json:"date"`
 	Preview string `json:"preview"`
+	Code    string `json:"code,omitempty"`
 	Folder  string `json:"folder,omitempty"` // 所在文件夹 (IMAP uid 按文件夹生效,读取正文时需要)
 }
 
@@ -226,6 +227,36 @@ func (c *Client) FindByRecipient(recipient string, limit int, days int) ([]Messa
 	return out, nil
 }
 
+// CountByRecipient 只搜索 UID 并返回命中数量，不抓取标题、摘要、正文或附件。
+func (c *Client) CountByRecipient(recipient string, days int) (int, error) {
+	if c.cli == nil {
+		return 0, fmt.Errorf("未连接")
+	}
+	total := 0
+	var lastErr error
+	for _, folder := range MailFolders {
+		if _, err := c.cli.Select(folder, true); err != nil {
+			lastErr = err
+			continue
+		}
+		criteria := imap.NewSearchCriteria()
+		criteria.Header.Add("To", recipient)
+		if days > 0 {
+			criteria.Since = time.Now().AddDate(0, 0, -days)
+		}
+		uids, err := c.cli.UidSearch(criteria)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		total += len(uids)
+	}
+	if total == 0 && lastErr != nil {
+		return 0, lastErr
+	}
+	return total, nil
+}
+
 // findByRecipientInFolder 在单个文件夹内按收件人查找。
 func (c *Client) findByRecipientInFolder(folder, recipient string, limit int, days int) ([]Message, error) {
 	// 先尝试服务端 TO 搜索
@@ -383,6 +414,7 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 		return nil, err
 	}
 	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
+	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
 	return full, nil
 }
 

@@ -1,0 +1,16 @@
+{
+  "reference_id": "linear.app",
+  "description": "Rewrite the entire current UI and design for iCloud Relay, including login/setup, active account operations dashboard, disabled accounts restore area, and account detail with aliases, inbox, shares.",
+  "mode": "inspired",
+  "delta_set": {
+    "axes": {
+      "density.shift": 1,
+      "radius.delta_px": -2
+    },
+    "voiceHints": ["operator-focused", "direct", "technical", "no marketing copy"],
+    "matchedKeywords": ["minimal", "dense", "product", "operations", "dark", "keyboard-first"],
+    "warnings": ["Backend currently exposes no disabled-account or batch account endpoints; frontend contract is documented in api/client.ts."]
+  },
+  "requested_components": ["login", "setup", "shell", "account-matrix", "batch-toolbar", "confirmation-dialog", "account-detail", "aliases", "inbox", "shares"],
+  "bootstrapped_at": "2026-09-12T11:45:00Z"
+}

@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"icloud_distribution/internal/mail"
 )
 
 // ====================================================================
@@ -99,6 +100,9 @@ func (s *Server) publicShareInbox(c *gin.Context) {
 	if err != nil {
 		fail(c, http.StatusBadGateway, err.Error())
 		return
+	}
+	for i := range messages {
+		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
 	}
 	ok(c, gin.H{
 		"alias":    sh.Alias,

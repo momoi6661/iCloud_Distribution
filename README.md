@@ -25,7 +25,7 @@ cd iCloud_Distribution
 docker compose up -d --build
 ```
 
-打开 http://localhost:8081 —— **首次访问会引导你创建管理员用户名和密码**（bcrypt 存储在 `data/admin.json`），之后用它登录。数据持久化在 `./data/`。
+打开 http://localhost:6981 —— **首次访问会引导你创建管理员用户名和密码**（bcrypt 存储在 `data/admin.json`），之后用它登录。数据持久化在 `./data/`。
 
 > 自动化场景也可以用静态口令跳过初始化：`HME_UI_TOKEN=xxx docker compose up -d --build`
 
@@ -42,7 +42,7 @@ make build                    # 前端构建 + Go 单二进制（内嵌前端）
 ### 开发模式
 
 ```bash
-make dev                      # 一条命令：后端 :8081 + Vite 热更新 :5173
+make dev                      # 一条命令：后端 :6981 + Vite 热更新 :5173
 ```
 
 ## 使用流程

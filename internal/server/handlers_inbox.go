@@ -109,6 +109,9 @@ func (s *Server) listInbox(c *gin.Context) {
 		fail(c, status, err.Error())
 		return
 	}
+	for i := range messages {
+		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
+	}
 	ok(c, gin.H{
 		"account_id": accountID,
 		"alias":      alias,
@@ -116,6 +119,34 @@ func (s *Server) listInbox(c *gin.Context) {
 		"messages":   messages,
 		"method":     method,
 	})
+}
+
+// inboxCount 只判断指定邮箱近 N 天的邮件数量，不等待邮件列表和摘要加载。
+func (s *Server) inboxCount(c *gin.Context) {
+	accountID := c.Query("account_id")
+	alias := strings.TrimSpace(c.Query("alias"))
+	if accountID == "" {
+		fail(c, http.StatusBadRequest, "参数缺失: account_id")
+		return
+	}
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
+	mc, unlock, err := s.mgr.AcquireIMAP(accountID)
+	if err != nil {
+		fail(c, http.StatusBadRequest, "邮件计数需要 App Password (IMAP): "+err.Error())
+		return
+	}
+	defer unlock.Unlock()
+	count := 0
+	if alias == "" {
+		count, err = mc.InboxCount()
+	} else {
+		count, err = mc.CountByRecipient(alias, days)
+	}
+	if err != nil {
+		fail(c, http.StatusBadGateway, "读取邮件数量失败: "+err.Error())
+		return
+	}
+	ok(c, gin.H{"account_id": accountID, "alias": alias, "count": count})
 }
 
 // getMessage 读取单封邮件完整内容 (含正文)。

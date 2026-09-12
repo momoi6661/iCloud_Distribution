@@ -24,7 +24,7 @@ type Account struct {
 	Name          string                   `json:"name"`
 	RealEmail     string                   `json:"real_email"`
 	ICloudEmail   string                   `json:"icloud_email"`
-	Cookies       map[string]string        `json:"cookies"`
+	Cookies       map[string]string        `json:"cookies,omitempty"`
 	Host          string                   `json:"host"`
 	Proxy         string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
 	AppPassword   string                   `json:"app_password,omitempty"`
@@ -36,6 +36,8 @@ type Account struct {
 	CreatedAt     string                   `json:"created_at"`
 	Groups        []LocalGroup             `json:"groups,omitempty"`
 	AliasMetadata map[string]AliasMetadata `json:"alias_metadata,omitempty"`
+	HasCookies    bool                     `json:"has_cookies,omitempty"`
+	HasAppPassword bool                    `json:"has_app_password,omitempty"`
 }
 
 // LocalGroup is a local-only organizer group; it never represents an iCloud resource.
@@ -322,7 +324,10 @@ func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
 			continue
 		}
 		cp := *acc
+		cp.HasCookies = len(acc.Cookies) > 0
+		cp.HasAppPassword = strings.TrimSpace(acc.AppPassword) != ""
 		cp.Cookies = nil
+		cp.AppPassword = ""
 		out = append(out, &cp)
 	}
 	return out

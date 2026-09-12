@@ -1,6 +1,6 @@
 # icloud_distribution 常用命令
 #
-# 开发:   make dev                — 一条命令同时启动后端 (:8081) 和前端热更新 (:5173)
+# 开发:   make dev                — 一条命令同时启动后端 (:6981) 和前端热更新 (:5173)
 #         make dev TOKEN=xxx      — 指定 UI 访问口令 (默认 dev123)
 # 构建:   make build    — 前端构建 + Go 单二进制
 # 测试:   make test     — go vet + go test -race

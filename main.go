@@ -2,7 +2,7 @@
 //
 // 用法:
 //
-//	./icloud_distribution                       # 默认 :8081
+//	./icloud_distribution                       # 默认 :6981
 //	./icloud_distribution -addr :9000           # 指定端口
 //	./icloud_distribution -data ./data          # 指定数据目录
 //	./icloud_distribution -token <口令>          # 启用 UI 访问鉴权
@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8081", "HTTP 监听地址")
+	addr := flag.String("addr", ":6981", "HTTP 监听地址")
 	dataDir := flag.String("data", "./data", "数据目录 (accounts.json 存放位置)")
 	token := flag.String("token", "", "UI 访问口令 (也可用环境变量 HME_UI_TOKEN)")
 	debug := flag.Bool("debug", false, "调试模式 (启用 Gin 调试日志)")

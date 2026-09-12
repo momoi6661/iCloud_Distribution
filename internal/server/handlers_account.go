@@ -120,7 +120,10 @@ func (s *Server) addAccount(c *gin.Context) {
 		_ = s.mgr.SetLoginEmail(acc.ID, req.Email)
 	}
 	// 返回时脱敏
+	acc.HasCookies = len(acc.Cookies) > 0
+	acc.HasAppPassword = strings.TrimSpace(acc.AppPassword) != ""
 	acc.Cookies = nil
+	acc.AppPassword = ""
 	c.JSON(http.StatusCreated, apiResp{Success: true, Data: acc})
 }
 

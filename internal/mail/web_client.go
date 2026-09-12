@@ -338,7 +338,13 @@ func (c *WebClient) SearchMails(query string, limit int) ([]Message, error) {
 	if query == "" {
 		return c.ListInbox(limit)
 	}
-	payload := fmt.Sprintf(`{"responseType":"THREAD_DIGEST","includeFolderStatus":false,"maxResults":%d,"query":%q,"sessionHeaders":{"folder":"INBOX","condstore":1,"qresync":1,"threadmode":1}}`, limit, query)
+	return c.SearchFolder(query, "INBOX", limit)
+
+}
+
+// SearchFolder 让 iCloud 服务端在指定文件夹中搜索，避免先下载大量 thread 再逐封过滤。
+func (c *WebClient) SearchFolder(query, folder string, limit int) ([]Message, error) {
+	payload := fmt.Sprintf(`{"responseType":"THREAD_DIGEST","includeFolderStatus":false,"maxResults":%d,"query":%q,"sessionHeaders":{"folder":%q,"condstore":1,"qresync":1,"threadmode":1}}`, limit, query, folder)
 	return c.search(payload)
 }
 
@@ -439,11 +445,6 @@ func (c *WebClient) FindByAlias(alias string, limit int) ([]Message, error) {
 		mu.Unlock()
 	}
 
-	batchSize := limit * 2
-	if batchSize < 50 {
-		batchSize = 50
-	}
-
 	// 扫描的文件夹: 收件箱 + 垃圾邮件
 	folders := []string{"INBOX", "Junk"}
 	var wg sync.WaitGroup
@@ -452,7 +453,9 @@ func (c *WebClient) FindByAlias(alias string, limit int) ([]Message, error) {
 	idx := 0
 
 	for _, folder := range folders {
-		raw, err := c.ListFolder(folder, batchSize)
+		// 直接由 iCloud 搜索目标地址。旧实现每个文件夹先取 50 封，再逐封
+		// thread/get，光判断“是否有邮件”也要 7–11 秒。
+		raw, err := c.SearchFolder(alias, folder, limit)
 		if err != nil {
 			c.logf("读取文件夹 %s 失败: %v", folder, err)
 			continue

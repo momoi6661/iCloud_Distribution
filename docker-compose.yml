@@ -3,7 +3,7 @@ services:
     build: .
     container_name: icloud_distribution
     ports:
-      - "8081:8081"
+      - "6981:6981"
     environment:
       # 可选: 静态访问口令 (自动化场景)。不设置则为管理员账号模式,
       # 首次访问 Web UI 时创建用户名+密码 (推荐)

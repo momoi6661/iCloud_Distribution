@@ -111,6 +111,7 @@ func (s *Server) register() {
 
 		// ===== 邮件 =====
 		authed.GET("/inbox", s.listInbox)
+		authed.GET("/inbox/count", s.inboxCount)
 		authed.GET("/inbox/message", s.getMessage)
 
 		// ===== 系统 =====
