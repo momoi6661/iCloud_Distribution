@@ -9,10 +9,11 @@ import (
 var (
 	// 只有靠近明确验证码语义的候选值才允许展示，避免把年份、订单号、金额等
 	// 正文数字误判成验证码。
-	verificationKeywordPrefix = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|一次性(?:验证码|代码)|安全码|安全代码|verification(?:\s+code)?|security(?:\s+code)?|one[-\s]?time\s+code|passcode|otp|\bcode\b)\s*(?:is|为|是|的)?\s*[:：=\-]?\s*((?:[A-Z0-9]\s*){4,10})`)
-	verificationKeywordSuffix = regexp.MustCompile(`(?i)((?:[A-Z0-9]\s*){4,10})\s*(?:是你的验证码|为你的验证码|is your code|is your verification code)`)
-	yearCode                  = regexp.MustCompile(`^20[2-3]\d$`)
-	repeatedDigitCode         = regexp.MustCompile(`^(0{4,10}|1{4,10}|2{4,10}|3{4,10}|4{4,10}|5{4,10}|6{4,10}|7{4,10}|8{4,10}|9{4,10})$`)
+	verificationKeywordPrefix      = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|一次性(?:验证码|代码)|安全码|安全代码|verification(?:\s+code)?|security(?:\s+code)?|one[-\s]?time\s+code|passcode|otp|\bcode\b)\s*(?:is|为|是|的)?\s*[:：=\-]?\s*((?:[A-Z0-9]\s*){4,10})`)
+	verificationKeywordSuffix      = regexp.MustCompile(`(?i)((?:[A-Z0-9]\s*){4,10})\s*(?:是你的验证码|为你的验证码|is your code|is your verification code)`)
+	verificationChineseInstruction = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|安全码|安全代码)[^\r\n:：=]{0,16}[:：=]\s*((?:[A-Z0-9]\s*){4,10})`)
+	yearCode                       = regexp.MustCompile(`^20[2-3]\d$`)
+	repeatedDigitCode              = regexp.MustCompile(`^(0{4,10}|1{4,10}|2{4,10}|3{4,10}|4{4,10}|5{4,10}|6{4,10}|7{4,10}|8{4,10}|9{4,10})$`)
 )
 
 type verificationCandidate struct {
@@ -29,6 +30,7 @@ func ExtractVerificationCode(text string) string {
 		score   int
 	}{
 		{verificationKeywordPrefix, 100},
+		{verificationChineseInstruction, 100},
 		{verificationKeywordSuffix, 100},
 	}
 	best := map[string]verificationCandidate{}

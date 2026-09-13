@@ -235,7 +235,7 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 				summary.Preview = previewFromRaw(previewReader)
 				summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
 			}
-			if summary.Preview == "" {
+			if summary.Preview == "" || looksLikeForwardedHeader(summary.Preview) {
 				if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
 					summary.Preview = previewFromRaw(rawReader)
 					summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
@@ -590,7 +590,7 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 			m.Preview = previewFromRaw(previewReader)
 			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
 		}
-		if m.Preview == "" {
+		if m.Preview == "" || looksLikeForwardedHeader(m.Preview) {
 			if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
 				m.Preview = previewFromRaw(rawReader)
 				m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
@@ -807,6 +807,12 @@ func previewFromRaw(r io.Reader) string {
 		text = string(runes[:200])
 	}
 	return text
+}
+
+func looksLikeForwardedHeader(text string) bool {
+	value := strings.ToLower(strings.TrimSpace(text))
+	return strings.Contains(value, "return-path:") &&
+		(strings.Contains(value, "original-recipient:") || strings.Contains(value, "received:"))
 }
 
 // stripForwardedHeaderPreamble 去掉转发服务写入正文开头的原始邮件头。
