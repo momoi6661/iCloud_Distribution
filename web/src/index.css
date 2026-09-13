@@ -278,6 +278,8 @@ h1, h2, h3, strong { font-weight: 650; }
 .mail-row strong, .public-mail-row strong { font-weight: 600; }
 .mail-row span, .public-mail-row span { font-weight: 500; }
 .mail-code-hint { color: var(--mint) !important; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600 !important; }
+.mail-code-line { display: inline-flex; align-items: center; gap: 6px; }
+.mail-code-copy { width: 24px; height: 24px; padding: 0; color: var(--mint); }
 .mail-row time, .public-mail-row time { justify-self: end; margin: 0 4px 0 12px; white-space: nowrap; }
 .mail-avatar { color: var(--text-2); background: var(--ink-800); border: 1px solid var(--line-soft); }
 .message-dialog-body { display: flex; flex-direction: column; }

@@ -220,9 +220,17 @@ function InlineMailRow({
   const expanded = selected?.id === item.id && selected.folder === item.folder;
   return (
     <div className={`mail-item ${expanded ? "expanded" : ""}`}>
-      <button
+      <div
         className={`mail-row mail-row-button ${expanded ? "selected" : ""}`}
         onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen();
+          }
+        }}
+        role="button"
+        tabIndex={0}
         aria-expanded={expanded}
       >
         <div className="mail-avatar">
@@ -233,11 +241,25 @@ function InlineMailRow({
           <span>{item.from}</span>
           {item.preview && <small>{item.preview}</small>}
           {item.code && (
-            <small className="mail-code-hint">验证码：{item.code}</small>
+            <small className="mail-code-line">
+              <span className="mail-code-hint">验证码：{item.code}</span>
+              <button
+                className="icon-button mail-code-copy"
+                type="button"
+                aria-label={`复制验证码 ${item.code}`}
+                title="复制验证码"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCopyCode(item.code || "");
+                }}
+              >
+                <Icon name="copy" size={14} />
+              </button>
+            </small>
           )}
         </div>
         <time>{dateText(item.date)}</time>
-      </button>
+      </div>
       {expanded && (
         <div className="inline-mail-detail" aria-live="polite">
           <div className="inline-mail-detail-head">
