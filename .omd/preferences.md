@@ -199,3 +199,18 @@ source_context: "web/src/pages/AccountDetail.tsx"
 ```
 
 Expiration fields present common duration presets first, including seven days, and reveal free-form duration input only when custom is selected.
+
+## 2026-09-13T06:05:28.346Z — operational-rows-use-unified-actions
+
+```omd-meta
+id: pref_mtzeu00q_837d41dc
+timestamp: 2026-09-13T06:05:28.346Z
+scope: components.button
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/AccountDetail.tsx"
+```
+
+Operational rows use compact, consistently sized action buttons; status text must remain visually distinct from clickable controls, and related configuration controls move together as a complete row when space is limited.

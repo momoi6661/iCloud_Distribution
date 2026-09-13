@@ -307,22 +307,59 @@ h1, h2, h3, strong { font-weight: 650; }
 .share-batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 22px 0; padding: 4px 8px; color: var(--text-2); background: var(--ink-800); border: 1px solid var(--line); border-radius: 6px; animation: reveal .18s var(--ease) both; }
 .share-batch-toolbar > span { margin-right: auto; font-size: 12px; }
 .share-select { flex: 0 0 44px; margin: -10px -4px -10px -10px; }
-.share-row-main { flex: 1 1 auto; min-width: 0; }
-.share-row-heading { display: flex; align-items: center; width: 100%; gap: 10px; min-width: 0; }
-.share-row-heading strong { flex: 1; min-width: 0; }
-.share-status { flex: 0 0 auto; min-height: 26px; padding: 0 8px; border: 1px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 600; }
+.share-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; grid-template-rows: auto auto; column-gap: 12px; min-height: 76px; padding: 10px 0; }
+.share-select { grid-column: 1; grid-row: 1 / 3; align-self: center; }
+.share-row-main, .share-row-heading { display: contents; }
+.share-row-heading strong { grid-column: 2; grid-row: 1; min-width: 0; align-self: end; }
+.share-row-main > span { grid-column: 2; grid-row: 2; min-width: 0; align-self: start; }
+.share-status { flex: 0 0 auto; min-height: auto; padding: 0; border: 0; border-radius: 0; font-size: 12px; font-weight: 650; }
+.share-status { grid-column: 3; grid-row: 1 / 3; align-self: center; justify-self: end; }
 .share-row-expired { opacity: .78; }
-.share-row-expired .share-status { color: var(--coral); background: rgba(236, 141, 134, .08); }
+.share-row-expired .share-status { color: var(--coral); background: transparent; }
 .share-duration-help { display: block; margin: -7px 0 2px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
 .share-expiry-menu { width: 100%; }
-.share-row > div:last-child { flex: 0 0 auto; }
+.share-row > div:last-child { display: inline-flex; align-items: center; grid-column: 4; grid-row: 1 / 3; align-self: center; justify-self: end; flex: 0 0 auto; gap: 4px; }
+.share-row > div:last-child .button,
+.share-row > div:last-child .text-button { min-height: 44px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; }
+.share-row > div:last-child .button:hover,
+.share-row > div:last-child .text-button:hover { background: var(--ink-800); }
+
+/* Keep account status and mail configuration in two deliberate rows. */
+.detail-state {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto auto;
+  align-items: center;
+  flex: 0 1 560px;
+  width: min(560px, 100%);
+  gap: 8px 12px;
+}
+.detail-state > :nth-child(1) { grid-column: 1; grid-row: 1; justify-self: start; }
+.detail-state > :nth-child(2) { grid-column: 2; grid-row: 1; }
+.detail-state > :nth-child(3) { grid-column: 3; grid-row: 1; justify-self: end; }
+.detail-state > :nth-child(4) { grid-column: 1; grid-row: 2; width: 100%; }
+.detail-state > :nth-child(5) { grid-column: 2; grid-row: 2; }
+.detail-state > :nth-child(6) { grid-column: 3; grid-row: 2; }
+
+@media (max-width: 1320px) {
+  .detail-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; }
+  .detail-identity { grid-column: 2; }
+  .detail-state { grid-column: 2; width: 100%; max-width: none; }
+}
 
 @media (max-width: 760px) {
-  .detail-state .detail-mail-method { flex: 1 1 190px; }
+  .detail-state { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; width: 100%; padding-left: 0; }
+  .detail-state > :nth-child(1), .detail-state > :nth-child(2), .detail-state > :nth-child(3), .detail-state > :nth-child(4), .detail-state > :nth-child(5), .detail-state > :nth-child(6) { grid-column: auto; grid-row: auto; justify-self: stretch; }
+  .detail-state > :nth-child(3), .detail-state > :nth-child(4) { grid-column: 1 / -1; }
+  .detail-state .button { width: 100%; }
   .share-toolbar { align-items: stretch; flex-direction: column; padding-inline: 16px; }
   .share-search, .share-filter-menu { width: 100%; max-width: none; flex-basis: auto; }
   .share-batch-toolbar { margin-inline: 16px; }
-  .share-row-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
-  .share-status { align-self: flex-start; }
-  .share-select { margin-left: -8px; }
+  .share-row { grid-template-columns: 44px minmax(0, 1fr); grid-template-rows: auto auto; }
+  .share-select { grid-column: 1; grid-row: 1; margin-left: -8px; }
+  .share-row-main { display: block; grid-column: 2; grid-row: 1; }
+  .share-row-heading { display: flex; align-items: center; gap: 8px; }
+  .share-row-heading strong { flex: 1; min-width: 0; }
+  .share-row-main > span { display: block; }
+  .share-status { flex: 0 0 auto; align-self: center; }
+  .share-row > div:last-child { grid-column: 2; grid-row: 2; justify-self: end; width: auto; }
 }
