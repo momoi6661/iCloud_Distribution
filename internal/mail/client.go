@@ -214,7 +214,9 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 		},
 	}}
 	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 16384}}
+	// 转发邮件的原始 message/rfc822 part 可能排在外层转发头之后，16KB
+	// 不一定覆盖到它；只对摘要回退使用这段上限，避免逐封读取完整正文。
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 262144}}
 	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem(), previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
@@ -575,7 +577,7 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 	// 列表阶段一次批量取信封和最多 2KB 正文开头作为摘要；完整正文
 	// 仍严格等到用户点击后再读取，避免逐封追加网络请求。
 	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 16384}}
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 262144}}
 	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
@@ -781,7 +783,7 @@ func toMessageWithBody(msg *imap.Message) Message {
 
 // previewFromRaw 从原始 (可能截断的) 正文提取简短预览。
 func previewFromRaw(r io.Reader) string {
-	raw, err := io.ReadAll(io.LimitReader(r, 4096))
+	raw, err := io.ReadAll(io.LimitReader(r, 262144))
 	if err != nil {
 		return ""
 	}
