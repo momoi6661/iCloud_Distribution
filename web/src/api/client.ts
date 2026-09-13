@@ -193,7 +193,7 @@ export const api = {
   renameOrganizerGroup: (accountId: string, groupId: string, name: string) => request<OrganizerGroup>('PUT', `/api/accounts/${accountId}/groups/${groupId}`, { name }),
   deleteOrganizerGroup: (accountId: string, groupId: string) => request<{ id: string }>('DELETE', `/api/accounts/${accountId}/groups/${groupId}`),
   updateAliasMeta: (accountId: string, meta: { alias_id: string; email: string; group_id: string; note: string }) => request<AliasMetadata>('PUT', `/api/accounts/${accountId}/alias-meta`, meta),
-  createAlias: (accountId: string, label: string) => request<{ email: string; label: string }>('POST', '/api/create', { account_id: accountId, label }),
+  createAlias: (accountId: string, label: string, groupId = '') => request<{ email: string; label: string; anonymous_id?: string }>('POST', '/api/create', { account_id: accountId, label, group_id: groupId }),
   batchCreate: (accountId: string, count: number, labelPrefix: string) => request<BatchCreateResult>('POST', `/api/accounts/${accountId}/aliases/batch`, { count, label_prefix: labelPrefix }),
   deactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/deactivate`, { account_id: accountId }),
   reactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/reactivate`, { account_id: accountId }),

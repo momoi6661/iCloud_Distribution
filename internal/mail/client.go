@@ -663,6 +663,7 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 		return nil, err
 	}
 	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
+	full.Folder = folder
 	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
 	return full, nil
 }

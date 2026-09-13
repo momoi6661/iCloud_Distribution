@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"icloud_distribution/internal/account"
 )
 
 // ====================================================================
@@ -16,6 +17,8 @@ import (
 type createReq struct {
 	AccountID string `json:"account_id" binding:"required"`
 	Label     string `json:"label"`
+	GroupID   string `json:"group_id"`
+	Note      string `json:"note"`
 }
 
 func (s *Server) createAlias(c *gin.Context) {
@@ -30,7 +33,6 @@ func (s *Server) createAlias(c *gin.Context) {
 		fail(c, http.StatusNotFound, err.Error())
 		return
 	}
-
 	result, err := client.CreateAlias(req.Label, 5)
 
 	// 操作完成后,保存可能已刷新的 Cookie（validate 会轮换 token）
@@ -45,9 +47,29 @@ func (s *Server) createAlias(c *gin.Context) {
 		}
 		return
 	}
+	// 创建成功后立即把本地整理信息绑定到真实的 anonymousId，避免新别名
+	// 只能在刷新后手动归类。iCloud 不保存这些字段，它们只存在本项目。
+	var anonymousID string
+	if req.GroupID != "" || req.Note != "" {
+		if aliases, listErr := client.ListAliases(); listErr == nil {
+			for _, alias := range aliases {
+				if alias.Email == result.Email {
+					anonymousID = alias.AnonymousID
+					break
+				}
+			}
+		}
+		if anonymousID != "" {
+			if _, metaErr := s.mgr.UpdateAliasMetadata(req.AccountID, account.AliasMetadata{AliasID: anonymousID, Email: result.Email, GroupID: req.GroupID, Note: req.Note}); metaErr != nil {
+				fail(c, http.StatusInternalServerError, "邮箱已创建，但保存分组失败: "+metaErr.Error())
+				return
+			}
+		}
+	}
 
 	ok(c, gin.H{
 		"email":      result.Email,
+		"anonymous_id": anonymousID,
 		"label":      result.Label,
 		"created_at": result.CreatedAt,
 		"account_id": req.AccountID,

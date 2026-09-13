@@ -38,13 +38,13 @@ func TestStore_CreateGetDelete(t *testing.T) {
 	}
 }
 
-func TestStore_Idempotent(t *testing.T) {
+func TestStore_MultipleLinksPerAlias(t *testing.T) {
 	s, _ := NewStore(t.TempDir())
 
 	sh1, _ := s.Create("acc_1", "a@icloud.com", "")
 	sh2, _ := s.Create("acc_1", "a@icloud.com", "")
-	if sh1.Token != sh2.Token {
-		t.Error("同一账号同一别名应复用 token")
+	if sh1.Token == sh2.Token {
+		t.Error("同一别名应允许创建多个不同 token")
 	}
 
 	sh3, _ := s.Create("acc_1", "b@icloud.com", "")
