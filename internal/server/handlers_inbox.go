@@ -16,52 +16,81 @@ import (
 	"icloud_distribution/internal/mail"
 )
 
-// readInbox 按认证优先级读取邮件: IMAP (App Password) 优先,Web API (Cookie) 回退。
-// 返回读取方式 (imap/web_api) 与邮件列表;无可用客户端或全部失败时返回错误。
+// readInbox 按指定方式读取邮件。preferred 为空或 auto 时按
+// 转发邮箱 IMAP > iCloud IMAP > Web API 的顺序自动选择。
 // 供 /api/inbox 与公开分享端点共用。
-func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
-	// 指定别名时优先使用 iCloud Web API 获取标题和正文开头摘要。
-	// thread/get 同时提供 IMAP UID，因此配置了 App Password 时，点击邮件仍走 IMAP 读取完整正文。
+func (s *Server) readInbox(accountID, alias string, limit, days int, preferred string) (string, []mail.Message, error) {
+	switch preferred {
+	case "forward_imap":
+		return s.readForwardInbox(accountID, alias, limit, days)
+	case "imap":
+		return s.readICloudIMAPInbox(accountID, alias, limit, days)
+	case "web_api":
+		return s.readWebInbox(accountID, alias, limit)
+	case "", "auto":
+		// 继续自动选择。
+	default:
+		return "", nil, fmt.Errorf("不支持的邮件读取方式: %s", preferred)
+	}
+
 	if alias != "" {
-		if wmc, err := s.mgr.WebMailClient(accountID); err == nil {
-			if messages, webErr := wmc.FindByAlias(alias, limit); webErr == nil && len(messages) > 0 {
-				s.mgr.CacheGateway(accountID, wmc.GatewayURL())
-				bodyMethod := "web_api"
-				if _, imapErr := s.mgr.MailClient(accountID); imapErr == nil && messagesHaveIMAPUIDs(messages) {
-					bodyMethod = "imap"
-				}
-				return bodyMethod, messages, nil
-			}
+		if method, messages, err := s.readForwardInbox(accountID, alias, limit, days); err == nil {
+			return method, messages, nil
 		}
 	}
-
-	// 优先 IMAP (连接池复用,免每次重新登录)
-	if mc, unlock, err := s.mgr.AcquireIMAP(accountID); err == nil {
-		var messages []mail.Message
-		var ferr error
-		if alias != "" {
-			messages, ferr = mc.FindByRecipient(alias, limit, days)
-		} else {
-			messages, ferr = mc.ListInbox(limit, days)
-		}
-		unlock.Unlock()
-		if ferr == nil {
-			if messages == nil {
-				messages = []mail.Message{}
-			}
-			return "imap", messages, nil
-		}
-		// IMAP 失败,继续尝试 Web API
+	if method, messages, err := s.readICloudIMAPInbox(accountID, alias, limit, days); err == nil {
+		return method, messages, nil
 	}
+	return s.readWebInbox(accountID, alias, limit)
+}
 
-	// 回退 Web API (mccgateway 端点偶发不稳定,失败重试一次)
+func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
+	if alias == "" {
+		return "", nil, fmt.Errorf("转发邮箱 IMAP 需要指定隐藏邮箱地址")
+	}
+	mc, unlock, folders, err := s.mgr.AcquireForwardIMAP(accountID)
+	if err != nil {
+		return "", nil, err
+	}
+	messages, readErr := mc.ListForwardedByAlias(alias, folders, limit, days)
+	unlock.Unlock()
+	if readErr != nil {
+		return "", nil, readErr
+	}
+	if messages == nil {
+		messages = []mail.Message{}
+	}
+	return "forward_imap", messages, nil
+}
+
+func (s *Server) readICloudIMAPInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
+	mc, unlock, err := s.mgr.AcquireIMAP(accountID)
+	if err != nil {
+		return "", nil, err
+	}
+	var messages []mail.Message
+	if alias != "" {
+		messages, err = mc.FindByRecipient(alias, limit, days)
+	} else {
+		messages, err = mc.ListInbox(limit, days)
+	}
+	unlock.Unlock()
+	if err != nil {
+		return "", nil, err
+	}
+	if messages == nil {
+		messages = []mail.Message{}
+	}
+	return "imap", messages, nil
+}
+
+func (s *Server) readWebInbox(accountID, alias string, limit int) (string, []mail.Message, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		wmc, err := s.mgr.WebMailClient(accountID)
 		if err != nil {
-			return "", nil, fmt.Errorf("无可用邮件客户端: 需要 App Password 或 Cookie")
+			return "", nil, fmt.Errorf("Web API 不可用: %w", err)
 		}
-
 		var messages []mail.Message
 		if alias != "" {
 			messages, err = wmc.FindByAlias(alias, limit)
@@ -69,7 +98,6 @@ func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []
 			messages, err = wmc.ListInbox(limit)
 		}
 		if err == nil {
-			// 回填网关缓存,后续请求免重新 validate
 			s.mgr.CacheGateway(accountID, wmc.GatewayURL())
 			if messages == nil {
 				messages = []mail.Message{}
@@ -78,16 +106,7 @@ func (s *Server) readInbox(accountID, alias string, limit, days int) (string, []
 		}
 		lastErr = err
 	}
-	return "", nil, fmt.Errorf("读取邮件失败: %w", lastErr)
-}
-
-func messagesHaveIMAPUIDs(messages []mail.Message) bool {
-	for _, message := range messages {
-		if _, err := strconv.ParseUint(message.ID, 10, 32); err != nil || message.Folder == "" {
-			return false
-		}
-	}
-	return true
+	return "", nil, fmt.Errorf("Web API 读取失败: %w", lastErr)
 }
 
 func (s *Server) listInbox(c *gin.Context) {
@@ -100,10 +119,10 @@ func (s *Server) listInbox(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
 
-	method, messages, err := s.readInbox(accountID, alias, limit, days)
+	method, messages, err := s.readInbox(accountID, alias, limit, days, c.DefaultQuery("method", "auto"))
 	if err != nil {
 		status := http.StatusBadGateway
-		if strings.Contains(err.Error(), "无可用邮件客户端") {
+		if strings.Contains(err.Error(), "不支持的邮件读取方式") || strings.Contains(err.Error(), "未配置") || strings.Contains(err.Error(), "需要指定") {
 			status = http.StatusBadRequest
 		}
 		fail(c, status, err.Error())
@@ -130,6 +149,16 @@ func (s *Server) inboxCount(c *gin.Context) {
 		return
 	}
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
+	if alias != "" {
+		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
+			count, countErr := mc.CountForwardedByAlias(alias, folders, days)
+			unlock.Unlock()
+			if countErr == nil {
+				ok(c, gin.H{"account_id": accountID, "alias": alias, "count": count, "method": "forward_imap"})
+				return
+			}
+		}
+	}
 	mc, unlock, err := s.mgr.AcquireIMAP(accountID)
 	if err != nil {
 		fail(c, http.StatusBadRequest, "邮件计数需要 App Password (IMAP): "+err.Error())
@@ -166,9 +195,17 @@ func (s *Server) getMessage(c *gin.Context) {
 		return
 	}
 
-	mc, unlock, err := s.mgr.AcquireIMAP(accountID)
+	var mc *mail.Client
+	var unlock interface{ Unlock() }
+	if c.Query("source") == "forward_imap" {
+		forwardClient, forwardUnlock, _, forwardErr := s.mgr.AcquireForwardIMAP(accountID)
+		mc, unlock, err = forwardClient, forwardUnlock, forwardErr
+	} else {
+		imapClient, imapUnlock, imapErr := s.mgr.AcquireIMAP(accountID)
+		mc, unlock, err = imapClient, imapUnlock, imapErr
+	}
 	if err != nil {
-		fail(c, http.StatusBadRequest, "正文读取需要 App Password (IMAP): "+err.Error())
+		fail(c, http.StatusBadRequest, "正文读取需要可用的 IMAP 配置: "+err.Error())
 		return
 	}
 	defer unlock.Unlock()

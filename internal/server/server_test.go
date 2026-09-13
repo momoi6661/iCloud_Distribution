@@ -127,6 +127,7 @@ func TestHandlerParamValidation(t *testing.T) {
 		{"login/otp 缺少参数", "POST", "/api/accounts/acc_x/login/otp", `{"code":"123456"}`, http.StatusBadRequest},
 		{"login/otp 无效会话", "POST", "/api/accounts/acc_x/login/otp", `{"session_id":"bad","code":"123456"}`, http.StatusGone},
 		{"inbox 缺少 account_id", "GET", "/api/inbox", ``, http.StatusBadRequest},
+		{"inbox 读取方式无效", "GET", "/api/inbox?account_id=a&method=unknown", ``, http.StatusBadRequest},
 		{"inbox/message uid 非数字", "GET", "/api/inbox/message?account_id=a&uid=abc", ``, http.StatusBadRequest},
 		{"添加账号缺少 name", "POST", "/api/accounts", `{"email":"a@b.c"}`, http.StatusBadRequest},
 		{"设置密码缺少字段", "POST", "/api/accounts/acc_x/password", `{"icloud_email":"a@b.c"}`, http.StatusBadRequest},

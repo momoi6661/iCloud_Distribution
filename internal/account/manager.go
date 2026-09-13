@@ -20,24 +20,36 @@ import (
 
 // Account 描述一个 iCloud 账号。
 type Account struct {
-	ID            string                   `json:"id"`
-	Name          string                   `json:"name"`
-	RealEmail     string                   `json:"real_email"`
-	ICloudEmail   string                   `json:"icloud_email"`
-	Cookies       map[string]string        `json:"cookies,omitempty"`
-	Host          string                   `json:"host"`
-	Proxy         string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
-	AppPassword   string                   `json:"app_password,omitempty"`
-	Status        string                   `json:"status"` // active / error
-	AliasTotal    int                      `json:"alias_total"`
-	AliasActive   int                      `json:"alias_active"`
-	LastValidated string                   `json:"last_validated"`
-	LastError     string                   `json:"last_error,omitempty"`
-	CreatedAt     string                   `json:"created_at"`
-	Groups        []LocalGroup             `json:"groups,omitempty"`
-	AliasMetadata map[string]AliasMetadata `json:"alias_metadata,omitempty"`
-	HasCookies    bool                     `json:"has_cookies,omitempty"`
-	HasAppPassword bool                    `json:"has_app_password,omitempty"`
+	ID             string                   `json:"id"`
+	Name           string                   `json:"name"`
+	RealEmail      string                   `json:"real_email"`
+	ICloudEmail    string                   `json:"icloud_email"`
+	Cookies        map[string]string        `json:"cookies,omitempty"`
+	Host           string                   `json:"host"`
+	Proxy          string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
+	AppPassword    string                   `json:"app_password,omitempty"`
+	ForwardIMAP    *ForwardIMAPConfig       `json:"forward_imap,omitempty"`
+	Status         string                   `json:"status"` // active / error
+	AliasTotal     int                      `json:"alias_total"`
+	AliasActive    int                      `json:"alias_active"`
+	LastValidated  string                   `json:"last_validated"`
+	LastError      string                   `json:"last_error,omitempty"`
+	CreatedAt      string                   `json:"created_at"`
+	Groups         []LocalGroup             `json:"groups,omitempty"`
+	AliasMetadata  map[string]AliasMetadata `json:"alias_metadata,omitempty"`
+	HasCookies     bool                     `json:"has_cookies,omitempty"`
+	HasAppPassword bool                     `json:"has_app_password,omitempty"`
+	HasForwardIMAP bool                     `json:"has_forward_imap,omitempty"`
+}
+
+// ForwardIMAPConfig describes the TLS IMAP mailbox that receives forwarded
+// Hide My Email messages. The password is persisted but never returned by API lists.
+type ForwardIMAPConfig struct {
+	Host      string   `json:"host"`
+	Port      int      `json:"port"`
+	Email     string   `json:"email"`
+	Password  string   `json:"password,omitempty"`
+	Mailboxes []string `json:"mailboxes,omitempty"`
 }
 
 // LocalGroup is a local-only organizer group; it never represents an iCloud resource.
@@ -80,6 +92,7 @@ type Manager struct {
 	accounts     map[string]*Account
 	gatewayCache map[string]gatewayEntry
 	imapPool     map[string]*imapConn
+	forwardPool  map[string]*imapConn
 	dataDir      string
 	dataFile     string
 }
@@ -93,6 +106,7 @@ func NewManager(dataDir string) (*Manager, error) {
 		accounts:     make(map[string]*Account),
 		gatewayCache: make(map[string]gatewayEntry),
 		imapPool:     make(map[string]*imapConn),
+		forwardPool:  make(map[string]*imapConn),
 		dataDir:      dataDir,
 		dataFile:     filepath.Join(dataDir, "accounts.json"),
 	}
@@ -287,6 +301,7 @@ func (m *Manager) DeactivateAccount(id string) error {
 	m.mu.Unlock()
 	if err == nil {
 		m.DropIMAP(id)
+		m.DropForwardIMAP(id)
 	}
 	return err
 }
@@ -326,8 +341,15 @@ func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
 		cp := *acc
 		cp.HasCookies = len(acc.Cookies) > 0
 		cp.HasAppPassword = strings.TrimSpace(acc.AppPassword) != ""
+		cp.HasForwardIMAP = acc.ForwardIMAP != nil && strings.TrimSpace(acc.ForwardIMAP.Password) != ""
 		cp.Cookies = nil
 		cp.AppPassword = ""
+		if acc.ForwardIMAP != nil {
+			forward := *acc.ForwardIMAP
+			forward.Password = ""
+			forward.Mailboxes = append([]string(nil), acc.ForwardIMAP.Mailboxes...)
+			cp.ForwardIMAP = &forward
+		}
 		out = append(out, &cp)
 	}
 	return out
@@ -372,6 +394,7 @@ func (m *Manager) BatchRemove(ids []string) (deleted, notFound int, err error) {
 		delete(m.accounts, id)
 		delete(m.gatewayCache, id)
 		delete(m.imapPool, id)
+		delete(m.forwardPool, id)
 		deleted++
 	}
 	if deleted > 0 {
@@ -702,6 +725,141 @@ func (m *Manager) DropIMAP(id string) {
 	conn, ok := m.imapPool[id]
 	if ok {
 		delete(m.imapPool, id)
+	}
+	m.mu.Unlock()
+	if ok {
+		conn.mu.Lock()
+		if conn.client != nil {
+			conn.client.Disconnect()
+		}
+		conn.mu.Unlock()
+	}
+}
+
+// SetForwardIMAP validates and stores a TLS IMAP mailbox used for forwarded mail.
+func (m *Manager) SetForwardIMAP(id string, config ForwardIMAPConfig) error {
+	m.mu.Lock()
+	acc, ok := m.accounts[id]
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
+	config.Host = strings.TrimSpace(config.Host)
+	config.Email = strings.TrimSpace(config.Email)
+	config.Password = strings.TrimSpace(config.Password)
+	if config.Port == 0 {
+		config.Port = 993
+	}
+	if config.Host == "" || len(config.Host) > 253 || strings.ContainsAny(config.Host, "/\\ \t\r\n") {
+		return fmt.Errorf("IMAP 服务器地址无效")
+	}
+	if config.Port < 1 || config.Port > 65535 {
+		return fmt.Errorf("IMAP 端口必须在 1 到 65535 之间")
+	}
+	if config.Email == "" || !strings.Contains(config.Email, "@") {
+		return fmt.Errorf("转发邮箱地址无效")
+	}
+	if config.Password == "" {
+		return fmt.Errorf("应用专用密码或 IMAP 授权码不能为空")
+	}
+	mailboxes := make([]string, 0, len(config.Mailboxes))
+	seen := make(map[string]struct{})
+	for _, mailbox := range config.Mailboxes {
+		mailbox = strings.TrimSpace(mailbox)
+		if mailbox == "" {
+			continue
+		}
+		if len(mailbox) > 128 || strings.ContainsRune(mailbox, '\x00') {
+			return fmt.Errorf("邮件文件夹名称无效")
+		}
+		if _, exists := seen[mailbox]; exists {
+			continue
+		}
+		seen[mailbox] = struct{}{}
+		mailboxes = append(mailboxes, mailbox)
+		if len(mailboxes) > 8 {
+			return fmt.Errorf("最多配置 8 个邮件文件夹")
+		}
+	}
+	if len(mailboxes) == 0 {
+		mailboxes = []string{"INBOX"}
+	}
+	config.Mailboxes = mailboxes
+
+	client := mail.NewGenericClient(config.Host, config.Port, config.Email, config.Password)
+	if err := client.Connect(); err != nil {
+		return err
+	}
+	client.Disconnect()
+
+	m.mu.Lock()
+	acc, ok = m.accounts[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	copyConfig := config
+	copyConfig.Mailboxes = append([]string(nil), config.Mailboxes...)
+	acc.ForwardIMAP = &copyConfig
+	err := m.save()
+	m.mu.Unlock()
+	if err == nil {
+		m.DropForwardIMAP(id)
+	}
+	return err
+}
+
+// AcquireForwardIMAP returns a pooled forwarding-mailbox connection and its folders.
+func (m *Manager) AcquireForwardIMAP(id string) (*mail.Client, *sync.Mutex, []string, error) {
+	m.mu.Lock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		m.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		m.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
+	if acc.ForwardIMAP == nil || strings.TrimSpace(acc.ForwardIMAP.Password) == "" {
+		m.mu.Unlock()
+		return nil, nil, nil, fmt.Errorf("账号未配置转发邮箱 IMAP")
+	}
+	config := *acc.ForwardIMAP
+	config.Mailboxes = append([]string(nil), acc.ForwardIMAP.Mailboxes...)
+	conn, exists := m.forwardPool[id]
+	if !exists {
+		conn = &imapConn{}
+		m.forwardPool[id] = conn
+	}
+	m.mu.Unlock()
+
+	conn.mu.Lock()
+	if conn.client != nil {
+		if err := conn.client.Noop(); err == nil {
+			return conn.client, &conn.mu, config.Mailboxes, nil
+		}
+		conn.client.Disconnect()
+		conn.client = nil
+	}
+	client := mail.NewGenericClient(config.Host, config.Port, config.Email, config.Password)
+	if err := client.Connect(); err != nil {
+		conn.mu.Unlock()
+		return nil, nil, nil, err
+	}
+	conn.client = client
+	return client, &conn.mu, config.Mailboxes, nil
+}
+
+// DropForwardIMAP removes and closes the forwarding mailbox connection.
+func (m *Manager) DropForwardIMAP(id string) {
+	m.mu.Lock()
+	conn, ok := m.forwardPool[id]
+	if ok {
+		delete(m.forwardPool, id)
 	}
 	m.mu.Unlock()
 	if ok {

@@ -72,6 +72,25 @@ func TestDecodePreviewBodyFromSelectedHTMLPart(t *testing.T) {
 	}
 }
 
+func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
+	raw := "--_NmP-7192ffa6f6d1a458-Part_1\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"Content-Transfer-Encoding: 7bit\r\n\r\n" +
+		"你的验证码是 7192。\r\n" +
+		"--_NmP-7192ffa6f6d1a458-Part_1\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n\r\n" +
+		"<p>你的验证码是 7192。</p>\r\n"
+	got := previewFromRaw(strings.NewReader(raw))
+	if got != "你的验证码是 7192。" {
+		t.Fatalf("unexpected preview: %q", got)
+	}
+	for _, unwanted := range []string{"Part_1", "Content-Type", "Content-Transfer-Encoding"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("MIME artifact %q leaked into preview %q", unwanted, got)
+		}
+	}
+}
+
 func TestSelectBodyPartPrefersPlainAndSkipsAttachment(t *testing.T) {
 	structure := &imap.BodyStructure{
 		MIMEType: "multipart",
@@ -84,5 +103,40 @@ func TestSelectBodyPartPrefersPlainAndSkipsAttachment(t *testing.T) {
 	part, ok := selectBodyPart(structure)
 	if !ok || len(part.path) != 1 || part.path[0] != 3 || part.contentType != "text/plain" || part.encoding != "base64" || part.charset != "gb18030" {
 		t.Fatalf("unexpected selection: %#v, ok=%v", part, ok)
+	}
+}
+
+func TestParseForwardedMessageMatchesExactAliasAndBuildsPreview(t *testing.T) {
+	raw := []byte("From: Sender <sender@example.com>\r\n" +
+		"To: target.alias@icloud.com\r\n" +
+		"Subject: Verification\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"Your verification code is 482913.\r\n")
+	full, matches, err := parseForwardedMessage(&imap.Message{Uid: 42}, raw, "INBOX", "target.alias@icloud.com")
+	if err != nil || !matches {
+		t.Fatalf("expected exact match, matches=%v err=%v", matches, err)
+	}
+	if full.ID != "42" || full.Folder != "INBOX" || full.Code != "482913" || !strings.Contains(full.Preview, "verification code") {
+		t.Fatalf("unexpected parsed message: %+v", full)
+	}
+	if _, similar, err := parseForwardedMessage(&imap.Message{Uid: 42}, raw, "INBOX", "alias@icloud.com"); err != nil || similar {
+		t.Fatalf("similar alias must not match, matches=%v err=%v", similar, err)
+	}
+}
+
+func TestParseForwardedSummaryUsesHeadersWithoutReadingBody(t *testing.T) {
+	raw := []byte("From: Sender <sender@example.com>\r\n" +
+		"To: target.alias@icloud.com\r\n" +
+		"Subject: Verification 482913\r\n" +
+		"Date: Fri, 12 Sep 2026 22:41:00 +0800\r\n\r\n")
+	summary, matches, err := parseForwardedSummary(&imap.Message{Uid: 42}, raw, "INBOX", "target.alias@icloud.com")
+	if err != nil || !matches {
+		t.Fatalf("expected exact header match, matches=%v err=%v", matches, err)
+	}
+	if summary.ID != "42" || summary.Folder != "INBOX" || summary.Preview != "" || summary.Code != "482913" {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
+	if _, similar, err := parseForwardedSummary(&imap.Message{Uid: 42}, raw, "INBOX", "alias@icloud.com"); err != nil || similar {
+		t.Fatalf("similar alias must not match, matches=%v err=%v", similar, err)
 	}
 }

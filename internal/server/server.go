@@ -86,6 +86,7 @@ func (s *Server) register() {
 		authed.DELETE("/accounts/:id/groups/:group_id", s.deleteOrganizerGroup)
 		authed.PUT("/accounts/:id/alias-meta", s.updateAliasMetadata)
 		authed.POST("/accounts/:id/password", s.setAppPassword)
+		authed.POST("/accounts/:id/forward-imap", s.setForwardIMAP)
 		authed.PUT("/accounts/:id/cookies", s.updateCookies)
 
 		// ===== 两段式自动授权 =====
@@ -108,6 +109,7 @@ func (s *Server) register() {
 		authed.POST("/aliases/share", s.createShare)
 		authed.GET("/shares", s.listShares)
 		authed.DELETE("/shares/:token", s.deleteShare)
+		authed.POST("/shares/batch/delete", s.batchDeleteShares)
 
 		// ===== 邮件 =====
 		authed.GET("/inbox", s.listInbox)

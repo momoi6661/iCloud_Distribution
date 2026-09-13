@@ -262,6 +262,38 @@ func TestManager_PersistAppPasswordUpdatesCurrentAccount(t *testing.T) {
 	}
 }
 
+func TestManager_ListAccountsRedactsForwardIMAPPassword(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc, err := m.AddAccount("forward", "", "icloud.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.accounts[acc.ID].ForwardIMAP = &ForwardIMAPConfig{
+		Host: "imap.example.com", Port: 993, Email: "inbox@example.com",
+		Password: "secret", Mailboxes: []string{"INBOX", "Junk"},
+	}
+	if err := m.save(); err != nil {
+		m.mu.Unlock()
+		t.Fatal(err)
+	}
+	m.mu.Unlock()
+
+	listed := m.ListAccounts()
+	if len(listed) != 1 || !listed[0].HasForwardIMAP || listed[0].ForwardIMAP == nil {
+		t.Fatalf("forward IMAP public state missing: %+v", listed)
+	}
+	if listed[0].ForwardIMAP.Password != "" {
+		t.Fatal("forward IMAP password leaked in account list")
+	}
+	if got := listed[0].ForwardIMAP.Mailboxes; len(got) != 2 || got[1] != "Junk" {
+		t.Fatalf("mailboxes not preserved: %#v", got)
+	}
+}
+
 func TestIsICloudDomain(t *testing.T) {
 	tests := map[string]bool{
 		"owner@icloud.com":          true,

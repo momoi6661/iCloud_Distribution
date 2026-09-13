@@ -47,6 +47,8 @@ export interface Account {
   created_at: string
   has_cookies?: boolean
   has_app_password?: boolean
+	forward_imap?: { host: string; port: number; email: string; mailboxes?: string[] }
+	has_forward_imap?: boolean
 }
 
 export interface Alias {
@@ -69,11 +71,14 @@ export interface MailMessage {
   folder?: string
 }
 
+export type MailReadMethod = 'imap' | 'web_api' | 'forward_imap'
+export type MailReadPreference = 'auto' | MailReadMethod
+
 export interface InboxData {
   account_id: string
   alias: string
   count: number
-  method: 'imap' | 'web_api'
+  method: MailReadMethod
   messages: MailMessage[]
 }
 
@@ -128,6 +133,13 @@ export interface ShareLink {
   alias: string
   label?: string
   created_at: string
+	expires_at?: string
+}
+
+export interface BatchShareResult {
+  requested: number
+  deleted: number
+  not_found: number
 }
 
 export interface OrganizerGroup {
@@ -187,15 +199,17 @@ export const api = {
   deleteAlias: (accountId: string, anonymousId: string) => request('DELETE', `/api/aliases/${anonymousId}`, { account_id: accountId }),
   setForwardTo: (accountId: string, email: string) => request('POST', `/api/accounts/${accountId}/forward-to`, { email }),
 
-  createShare: (accountId: string, alias: string, label: string) => request<{ token: string; url: string; alias: string; created_at: string }>('POST', '/api/aliases/share', { account_id: accountId, alias, label }),
+  createShare: (accountId: string, alias: string, label: string, expiresMinutes: number) => request<{ token: string; url: string; alias: string; created_at: string; expires_at?: string }>('POST', '/api/aliases/share', { account_id: accountId, alias, label, expires_minutes: expiresMinutes }),
   listShares: (accountId: string) => request<ShareLink[]>('GET', `/api/shares?account_id=${encodeURIComponent(accountId)}`),
   deleteShare: (token: string) => request('DELETE', `/api/shares/${token}`),
+  batchDeleteShares: (tokens: string[]) => request<BatchShareResult>('POST', '/api/shares/batch/delete', { tokens }),
 
-  publicShareInfo: (token: string) => request<{ alias: string; label?: string; created_at: string }>('GET', `/api/public/share/${token}`),
-  publicShareInbox: (token: string, limit = 30, days = 7) => request<{ alias: string; count: number; method: 'imap' | 'web_api'; messages: MailMessage[] }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}`),
-  publicShareMessage: (token: string, uid: string, folder?: string) => request<FullMailMessage>('GET', `/api/public/share/${token}/message?uid=${uid}${folder ? `&folder=${folder}` : ''}`),
+  publicShareInfo: (token: string) => request<{ alias: string; label?: string; created_at: string; expires_at?: string }>('GET', `/api/public/share/${token}`),
+  publicShareInbox: (token: string, limit = 30, days = 7) => request<{ alias: string; count: number; method: MailReadMethod; messages: MailMessage[] }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}`),
+  publicShareMessage: (token: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/public/share/${token}/message?uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
 
-  inbox: (accountId: string, alias: string, limit = 20, days = 7) => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}`),
+  inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto') => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&method=${encodeURIComponent(method)}`),
   inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
-  getMessage: (accountId: string, uid: string, folder?: string) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${folder}` : ''}`),
+  getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
+	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
 }

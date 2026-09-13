@@ -33,8 +33,9 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
     <main className="auth-page">
       <section className="auth-panel" aria-labelledby="auth-title">
         <div className="auth-brand"><span>iCloud 邮箱管理</span><span className="auth-version">本地控制台</span></div>
-        <div className="auth-copy"><span className="eyebrow">私密邮箱运维</span><h1 id="auth-title">让每条转发<br /><em>保持在线。</em></h1><p>在一个清晰的操作台中管理 iCloud 隐藏邮箱、别名和收件箱。</p></div>
-        <div className="auth-telemetry"><span>本地服务</span><strong>就绪</strong></div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+          <div className="auth-copy"><span className="eyebrow">私密邮箱运维</span><h1 id="auth-title">让每条转发<br /><em>保持在线。</em></h1><p>在一个清晰的操作台中管理 iCloud 隐藏邮箱、别名和收件箱。</p></div>
+        </div>
       </section>
       <section className="auth-form-wrap">
         <div className="auth-form-card">

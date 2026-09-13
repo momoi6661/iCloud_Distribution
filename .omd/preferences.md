@@ -109,3 +109,78 @@ source_context: "web/src/components/PageLayout.tsx"
 ```
 
 Sidebar navigation does not repeat account counts that already appear in the destination page content.
+
+## 2026-09-13T12:10:47.666Z — login-avoids-redundant-service-status
+
+```omd-meta
+id: pref_mtzaqiwq_486526d8
+timestamp: 2026-09-13T12:10:47.666Z
+scope: layout
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/Login.tsx"
+```
+
+The login page does not show a redundant local-service ready status strip when service availability is already implied by the loaded login form.
+
+## 2026-09-13T12:13:59.975Z — custom-duration-uses-readable-units
+
+```omd-meta
+id: pref_mtzaunb4_88fa8a97
+timestamp: 2026-09-13T12:13:59.975Z
+scope: components.input
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/AccountDetail.tsx"
+```
+
+Custom expiration controls use a numeric duration with readable minute, hour, and day units instead of forcing every duration to be entered as raw minutes.
+
+## 2026-09-13T12:30:10.907Z — shared-mail-uses-list-then-reader
+
+```omd-meta
+id: pref_mtzbfghl_e7e0c425
+timestamp: 2026-09-13T12:30:10.907Z
+scope: layout
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/SharePage.tsx"
+```
+
+Shared mailboxes show a full-width message list first, then replace it with an in-page message reader and an explicit back-to-list action; they do not reserve an empty split reader pane.
+
+## 2026-09-13T05:07:13.808Z — icloud-imap-keeps-only-required-credentials
+
+```omd-meta
+id: pref_mtzcr3m8_034fed92
+timestamp: 2026-09-13T05:07:13.808Z
+scope: components.input
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/AccountDetail.tsx"
+```
+
+iCloud IMAP setup shows only the actual iCloud email and App-specific password; fixed server, port, and encryption settings stay out of the form.
+
+## 2026-09-13T05:49:49.455Z — outer-mail-reader-and-share-management
+
+```omd-meta
+id: pref_mtze9vkf_67ce9140
+timestamp: 2026-09-13T05:49:49.455Z
+scope: layout
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/AccountDetail.tsx"
+```
+
+Configure the mail reading method on the account detail shell, outside the inbox; share links stay in a searchable management list with active and expired states plus batch deletion.

@@ -206,6 +206,32 @@ func (s *Server) setAppPassword(c *gin.Context) {
 	ok(c, gin.H{"id": id, "icloud_email": req.ICloudEmail})
 }
 
+type setForwardIMAPReq struct {
+	Host      string   `json:"host" binding:"required"`
+	Port      int      `json:"port"`
+	Email     string   `json:"email" binding:"required"`
+	Password  string   `json:"password" binding:"required"`
+	Mailboxes []string `json:"mailboxes"`
+}
+
+func (s *Server) setForwardIMAP(c *gin.Context) {
+	id := c.Param("id")
+	var req setForwardIMAPReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: host, email, password 必填 — "+err.Error())
+		return
+	}
+	config := account.ForwardIMAPConfig{
+		Host: req.Host, Port: req.Port, Email: req.Email,
+		Password: req.Password, Mailboxes: req.Mailboxes,
+	}
+	if err := s.mgr.SetForwardIMAP(id, config); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"id": id, "host": config.Host, "port": config.Port, "email": config.Email})
+}
+
 type updateCookiesReq struct {
 	Cookies map[string]string `json:"cookies" binding:"required"`
 }

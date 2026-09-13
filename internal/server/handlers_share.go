@@ -17,13 +17,19 @@ import (
 // ====================================================================
 
 type createShareReq struct {
-	AccountID string `json:"account_id" binding:"required"`
-	Alias     string `json:"alias" binding:"required"`
-	Label     string `json:"label"`
+	AccountID      string `json:"account_id" binding:"required"`
+	Alias          string `json:"alias" binding:"required"`
+	Label          string `json:"label"`
+	ExpiresMinutes int    `json:"expires_minutes"`
+}
+
+type batchDeleteSharesReq struct {
+	Tokens []string `json:"tokens" binding:"required"`
 }
 
 // createShare 为别名创建 (或复用) 分享链接。
-//   POST /api/aliases/share  body: {"account_id": "...", "alias": "x@icloud.com", "label": "..."}
+//
+//	POST /api/aliases/share  body: {"account_id": "...", "alias": "x@icloud.com", "label": "..."}
 func (s *Server) createShare(c *gin.Context) {
 	var req createShareReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,9 +41,9 @@ func (s *Server) createShare(c *gin.Context) {
 		return
 	}
 
-	sh, err := s.shares.Create(req.AccountID, req.Alias, req.Label)
+	sh, err := s.shares.Create(req.AccountID, req.Alias, req.Label, req.ExpiresMinutes)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "创建分享失败: "+err.Error())
+		fail(c, http.StatusBadRequest, "创建分享失败: "+err.Error())
 		return
 	}
 	ok(c, gin.H{
@@ -46,17 +52,20 @@ func (s *Server) createShare(c *gin.Context) {
 		"label":      sh.Label,
 		"url":        "/share/" + sh.Token,
 		"created_at": sh.CreatedAt,
+		"expires_at": sh.ExpiresAt,
 	})
 }
 
 // listShares 列出分享链接。
-//   GET /api/shares?account_id=acc_xxx
+//
+//	GET /api/shares?account_id=acc_xxx
 func (s *Server) listShares(c *gin.Context) {
 	ok(c, s.shares.List(c.Query("account_id")))
 }
 
 // deleteShare 吊销分享链接。
-//   DELETE /api/shares/:token
+//
+//	DELETE /api/shares/:token
 func (s *Server) deleteShare(c *gin.Context) {
 	token := c.Param("token")
 	if !s.shares.Delete(token) {
@@ -66,37 +75,59 @@ func (s *Server) deleteShare(c *gin.Context) {
 	ok(c, gin.H{"token": token})
 }
 
+// batchDeleteShares 批量吊销分享链接。
+func (s *Server) batchDeleteShares(c *gin.Context) {
+	var req batchDeleteSharesReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Tokens) == 0 {
+		fail(c, http.StatusBadRequest, "参数错误: tokens 必须是非空数组")
+		return
+	}
+	if len(req.Tokens) > 500 {
+		fail(c, http.StatusBadRequest, "一次最多删除 500 个分享链接")
+		return
+	}
+	deleted, notFound, err := s.shares.DeleteMany(req.Tokens)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "批量删除分享失败: "+err.Error())
+		return
+	}
+	ok(c, gin.H{"requested": len(req.Tokens), "deleted": deleted, "not_found": notFound})
+}
+
 // ====================================================================
 // 公开端 (免登录,只读)
 // ====================================================================
 
 // publicShareInfo 返回分享的基本信息。
-//   GET /api/public/share/:token
+//
+//	GET /api/public/share/:token
 func (s *Server) publicShareInfo(c *gin.Context) {
 	sh, exists := s.shares.Get(c.Param("token"))
 	if !exists {
-		fail(c, http.StatusNotFound, "分享链接不存在或已吊销")
+		fail(c, http.StatusNotFound, "分享链接不存在、已过期或已吊销")
 		return
 	}
 	ok(c, gin.H{
 		"alias":      sh.Alias,
 		"label":      sh.Label,
 		"created_at": sh.CreatedAt,
+		"expires_at": sh.ExpiresAt,
 	})
 }
 
 // publicShareInbox 读取分享别名的邮件。
-//   GET /api/public/share/:token/inbox?limit=30&days=7
+//
+//	GET /api/public/share/:token/inbox?limit=30&days=7
 func (s *Server) publicShareInbox(c *gin.Context) {
 	sh, exists := s.shares.Get(c.Param("token"))
 	if !exists {
-		fail(c, http.StatusNotFound, "分享链接不存在或已吊销")
+		fail(c, http.StatusNotFound, "分享链接不存在、已过期或已吊销")
 		return
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
 
-	method, messages, err := s.readInbox(sh.AccountID, sh.Alias, limit, days)
+	method, messages, err := s.readInbox(sh.AccountID, sh.Alias, limit, days, "auto")
 	if err != nil {
 		fail(c, http.StatusBadGateway, err.Error())
 		return
@@ -113,11 +144,12 @@ func (s *Server) publicShareInbox(c *gin.Context) {
 }
 
 // publicShareMessage 读取分享别名的单封邮件正文 (仅 IMAP 路径支持)。
-//   GET /api/public/share/:token/message?uid=1042
+//
+//	GET /api/public/share/:token/message?uid=1042
 func (s *Server) publicShareMessage(c *gin.Context) {
 	sh, exists := s.shares.Get(c.Param("token"))
 	if !exists {
-		fail(c, http.StatusNotFound, "分享链接不存在或已吊销")
+		fail(c, http.StatusNotFound, "分享链接不存在、已过期或已吊销")
 		return
 	}
 	uid64, err := strconv.ParseUint(c.Query("uid"), 10, 32)
@@ -126,9 +158,17 @@ func (s *Server) publicShareMessage(c *gin.Context) {
 		return
 	}
 
-	mc, unlock, err := s.mgr.AcquireIMAP(sh.AccountID)
+	var mc *mail.Client
+	var unlock interface{ Unlock() }
+	if c.Query("source") == "forward_imap" {
+		forwardClient, forwardUnlock, _, forwardErr := s.mgr.AcquireForwardIMAP(sh.AccountID)
+		mc, unlock, err = forwardClient, forwardUnlock, forwardErr
+	} else {
+		imapClient, imapUnlock, imapErr := s.mgr.AcquireIMAP(sh.AccountID)
+		mc, unlock, err = imapClient, imapUnlock, imapErr
+	}
 	if err != nil {
-		fail(c, http.StatusBadRequest, "正文读取需要 App Password (IMAP)")
+		fail(c, http.StatusBadRequest, "正文读取需要可用的 IMAP 配置")
 		return
 	}
 	defer unlock.Unlock()

@@ -287,4 +287,41 @@ h1, h2, h3, strong { font-weight: 650; }
 .public-mail-loading strong { color: var(--text-2); font-size: 14px; font-weight: 600; }
 .public-mail-loading span { font-size: 12px; }
 .public-footnote { padding: 12px 20px 16px; }
+.mail-method-menu { min-width: 176px; }
+.public-mail-list { padding: 0 20px 12px; }
+.public-message-header { align-items: flex-start; }
+.public-message-header > div { min-width: 0; }
+.public-message-back { width: fit-content; margin: -8px 0 8px; }
+.public-message-view { min-height: 420px; border-bottom: 1px solid var(--line-soft); }
+.public-message-view .inbox-reader-state { min-height: 420px; }
+.public-message-body { min-height: 420px; padding: 24px 28px 48px; color: var(--text-2); line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 600px) { .public-card-header { padding-inline: 16px; } .mail-list { padding-inline: 12px; } .mail-row, .public-mail-row { padding-inline: 4px; } }
+@media (max-width: 600px) { .mail-method-menu { width: 100%; } .public-message-header { flex-direction: column; } .public-message-header > .button { width: 100%; } .public-message-body { min-height: 320px; padding: 20px 16px 40px; } .public-message-view, .public-message-view .inbox-reader-state { min-height: 320px; } }
+/* Share management and outer mail-reader configuration. */
+.detail-mail-method { min-width: 190px; }
+.detail-state .detail-mail-method { flex: 0 1 210px; }
+.detail-state { flex-wrap: wrap; row-gap: 6px; }
+.share-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 22px 14px; border-bottom: 1px solid var(--line-soft); }
+.share-search { flex: 1; width: auto; max-width: 520px; }
+.share-filter-menu { flex: 0 0 170px; }
+.share-batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 22px 0; padding: 4px 8px; color: var(--text-2); background: var(--ink-800); border: 1px solid var(--line); border-radius: 6px; animation: reveal .18s var(--ease) both; }
+.share-batch-toolbar > span { margin-right: auto; font-size: 12px; }
+.share-select { flex: 0 0 44px; margin: -10px -4px -10px -10px; }
+.share-row-main { min-width: 0; }
+.share-row-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.share-row-heading strong { flex: 1; min-width: 0; }
+.share-status { flex: 0 0 auto; min-height: 26px; padding: 0 8px; border: 1px solid currentColor; border-radius: 5px; font-size: 11px; font-weight: 600; }
+.share-row-expired { opacity: .78; }
+.share-row-expired .share-status { color: var(--coral); background: rgba(236, 141, 134, .08); }
+.share-duration-help { display: block; margin: -7px 0 2px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.share-row > div:last-child { flex: 0 0 auto; }
+
+@media (max-width: 760px) {
+  .detail-state .detail-mail-method { flex: 1 1 190px; }
+  .share-toolbar { align-items: stretch; flex-direction: column; padding-inline: 16px; }
+  .share-search, .share-filter-menu { width: 100%; max-width: none; flex-basis: auto; }
+  .share-batch-toolbar { margin-inline: 16px; }
+  .share-row-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .share-status { align-self: flex-start; }
+  .share-select { margin-left: -8px; }
+}

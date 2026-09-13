@@ -1,6 +1,9 @@
 package share
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestStore_CreateGetDelete(t *testing.T) {
 	s, err := NewStore(t.TempDir())
@@ -76,5 +79,49 @@ func TestStore_List(t *testing.T) {
 	}
 	if got := len(s.List("")); got != 3 {
 		t.Errorf("全部应有 3 个分享, 实际 %d", got)
+	}
+}
+
+func TestStore_CustomMinuteExpiry(t *testing.T) {
+	s, _ := NewStore(t.TempDir())
+	before := time.Now().Add(119 * time.Minute)
+	sh, err := s.Create("acc_1", "minute@icloud.com", "限时", 120)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339, sh.ExpiresAt)
+	if err != nil || expiresAt.Before(before) || expiresAt.After(time.Now().Add(121*time.Minute)) {
+		t.Fatalf("自定义分钟到期时间异常: %q", sh.ExpiresAt)
+	}
+	if _, ok := s.Get(sh.Token); !ok {
+		t.Fatal("未到期链接应可读取")
+	}
+	if _, err := s.Create("acc_1", "bad@icloud.com", "", -1); err == nil {
+		t.Fatal("负数分钟应被拒绝")
+	}
+}
+
+func TestStore_ExpiredLinkIsHidden(t *testing.T) {
+	s, _ := NewStore(t.TempDir())
+	sh, _ := s.Create("acc_1", "expired@icloud.com", "")
+	s.shares[sh.Token].ExpiresAt = time.Now().Add(-time.Minute).Format(time.RFC3339)
+	if _, ok := s.Get(sh.Token); ok {
+		t.Fatal("过期链接不应再被读取")
+	}
+	if got := len(s.List("acc_1")); got != 1 {
+		t.Fatalf("管理列表应保留过期链接: %d", got)
+	}
+}
+
+func TestStore_DeleteMany(t *testing.T) {
+	s, _ := NewStore(t.TempDir())
+	first, _ := s.Create("acc_1", "a@icloud.com", "")
+	second, _ := s.Create("acc_1", "b@icloud.com", "")
+	deleted, notFound, err := s.DeleteMany([]string{first.Token, second.Token, first.Token, "missing"})
+	if err != nil || deleted != 2 || notFound != 1 {
+		t.Fatalf("DeleteMany = deleted %d, notFound %d, err %v", deleted, notFound, err)
+	}
+	if got := len(s.List("acc_1")); got != 0 {
+		t.Fatalf("批量删除后应为空: %d", got)
 	}
 }

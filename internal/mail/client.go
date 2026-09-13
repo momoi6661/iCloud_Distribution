@@ -5,6 +5,7 @@
 package mail
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	stdhtml "html"
@@ -13,6 +14,7 @@ import (
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -49,28 +51,279 @@ type FullMessage struct {
 
 // Client 是 iCloud 邮件 IMAP 客户端。
 type Client struct {
-	appleID     string
+	host        string
+	port        int
+	email       string
 	appPassword string
 	cli         *client.Client
 }
 
 // NewClient 创建 IMAP 客户端。需在调用其它方法前先 Connect。
 func NewClient(appleID, appPassword string) *Client {
-	return &Client{appleID: appleID, appPassword: appPassword}
+	return NewGenericClient(IMAPServer, IMAPPort, appleID, appPassword)
+}
+
+// NewGenericClient 创建一个使用 TLS 的通用 IMAP 客户端。
+// 用于读取隐藏邮箱所转发到的 Gmail、QQ Mail、Outlook 等邮箱。
+func NewGenericClient(host string, port int, email, password string) *Client {
+	return &Client{host: host, port: port, email: email, appPassword: password}
 }
 
 // Connect 连接并登录 IMAP 服务器。
 func (c *Client) Connect() error {
-	addr := fmt.Sprintf("%s:%d", IMAPServer, IMAPPort)
+	addr := fmt.Sprintf("%s:%d", c.host, c.port)
 	cli, err := client.DialTLS(addr, nil)
 	if err != nil {
 		return fmt.Errorf("IMAP 连接失败: %w", err)
 	}
-	if err := cli.Login(c.appleID, c.appPassword); err != nil {
-		return fmt.Errorf("IMAP 登录失败 — 请检查: 1) 应用专用密码是否正确 2) Apple ID: %s — %w", c.appleID, err)
+	if err := cli.Login(c.email, c.appPassword); err != nil {
+		_ = cli.Logout()
+		return fmt.Errorf("IMAP 登录失败 — 请检查邮箱地址和应用专用密码/授权码: %s — %w", c.email, err)
 	}
 	c.cli = cli
 	return nil
+}
+
+var forwardedEmailPattern = regexp.MustCompile(`(?i)[A-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}`)
+
+// ListForwardedByAlias 从转发邮箱中读取匹配指定隐藏邮箱地址的邮件摘要。
+// 优先按 To 邮件头搜索，找不到时才回退全文搜索；列表阶段只批量读取
+// 信封、必要邮件头和最多 2KB 正文开头，完整正文留到用户点击后获取。
+func (c *Client) ListForwardedByAlias(alias string, folders []string, limit, days int) ([]Message, error) {
+	if c.cli == nil {
+		return nil, fmt.Errorf("未连接")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if len(folders) == 0 {
+		folders = []string{"INBOX"}
+	}
+	target := strings.ToLower(strings.TrimSpace(alias))
+	var out []Message
+	var lastErr error
+	for _, folder := range folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			continue
+		}
+		if _, err := c.cli.Select(folder, true); err != nil {
+			lastErr = err
+			continue
+		}
+		uids, err := c.searchForwardedUIDs(target, days)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(uids) > limit {
+			uids = uids[len(uids)-limit:]
+		}
+		messages, err := c.fetchForwardedMessages(uids, folder, target)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		out = append(out, messages...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Date > out[j].Date })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
+}
+
+func (c *Client) searchForwardedUIDs(target string, days int) ([]uint32, error) {
+	criteria := imap.NewSearchCriteria()
+	if target != "" {
+		criteria.Header.Add("To", target)
+	}
+	if days > 0 {
+		criteria.Since = time.Now().AddDate(0, 0, -days)
+	}
+	uids, err := c.cli.UidSearch(criteria)
+	if err != nil || len(uids) > 0 || target == "" {
+		return uids, err
+	}
+
+	// 某些转发服务会改写 To，仅在必要时进行兼容性的全文搜索。
+	criteria = imap.NewSearchCriteria()
+	criteria.Text = []string{target}
+	if days > 0 {
+		criteria.Since = time.Now().AddDate(0, 0, -days)
+	}
+	return c.cli.UidSearch(criteria)
+}
+
+// CountForwardedByAlias 只执行 IMAP SEARCH，不下载邮件内容。
+func (c *Client) CountForwardedByAlias(alias string, folders []string, days int) (int, error) {
+	if c.cli == nil {
+		return 0, fmt.Errorf("未连接")
+	}
+	if len(folders) == 0 {
+		folders = []string{"INBOX"}
+	}
+	target := strings.ToLower(strings.TrimSpace(alias))
+	total := 0
+	var lastErr error
+	for _, folder := range folders {
+		if _, err := c.cli.Select(strings.TrimSpace(folder), true); err != nil {
+			lastErr = err
+			continue
+		}
+		criteria := imap.NewSearchCriteria()
+		if target != "" {
+			criteria.Text = []string{target}
+		}
+		if days > 0 {
+			criteria.Since = time.Now().AddDate(0, 0, -days)
+		}
+		uids, err := c.cli.UidSearch(criteria)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		total += len(uids)
+	}
+	if total == 0 && lastErr != nil {
+		return 0, lastErr
+	}
+	return total, nil
+}
+
+func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([]Message, error) {
+	if len(uids) == 0 {
+		return []Message{}, nil
+	}
+	seqset := new(imap.SeqSet)
+	for _, uid := range uids {
+		seqset.AddNum(uid)
+	}
+	section := &imap.BodySectionName{Peek: true, BodyPartName: imap.BodyPartName{
+		Specifier: imap.HeaderSpecifier,
+		Fields: []string{
+			"From", "To", "Cc", "Subject", "Date", "Delivered-To", "X-Original-To",
+			"Envelope-To", "Resent-To", "Original-Recipient", "X-Envelope-To", "X-Forwarded-To", "Received",
+			"Content-Type", "Content-Transfer-Encoding",
+		},
+	}}
+	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem(), previewSection.FetchItem()}
+	messages := make(chan *imap.Message, len(uids))
+	done := make(chan error, 1)
+	go func() { done <- c.cli.UidFetch(seqset, items, messages) }()
+	var out []Message
+	for msg := range messages {
+		rawReader := msg.GetBody(section)
+		if rawReader == nil {
+			continue
+		}
+		raw, err := io.ReadAll(rawReader)
+		if err != nil {
+			continue
+		}
+		summary, matches, err := parseForwardedSummary(msg, raw, folder, target)
+		if err == nil && matches {
+			if previewReader := msg.GetBody(previewSection); previewReader != nil {
+				summary.Preview = previewFromRaw(previewReader)
+				summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
+			}
+			out = append(out, *summary)
+		}
+	}
+	if err := <-done; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func parseForwardedSummary(msg *imap.Message, raw []byte, folder, target string) (*Message, bool, error) {
+	parsed, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return nil, false, err
+	}
+	headerText := strings.Join([]string{
+		parsed.Header.Get("Delivered-To"), parsed.Header.Get("X-Original-To"),
+		parsed.Header.Get("Envelope-To"), parsed.Header.Get("Resent-To"),
+		parsed.Header.Get("Original-Recipient"), parsed.Header.Get("X-Envelope-To"),
+		parsed.Header.Get("X-Forwarded-To"), parsed.Header.Get("Received"),
+		parsed.Header.Get("To"), parsed.Header.Get("Cc"),
+	}, "\n")
+	base := toMessage(msg)
+	base.Folder = folder
+	if base.Subject == "" {
+		base.Subject = decodeHeader(parsed.Header.Get("Subject"))
+	}
+	if base.From == "" {
+		base.From = decodeHeader(parsed.Header.Get("From"))
+	}
+	if base.To == "" {
+		base.To = decodeHeader(parsed.Header.Get("To"))
+	}
+	if base.Date == "" {
+		if parsedDate, dateErr := mail.ParseDate(parsed.Header.Get("Date")); dateErr == nil {
+			base.Date = parsedDate.Format(time.RFC3339)
+		}
+	}
+	base.Code = ExtractVerificationCode(base.Subject)
+	return &base, target == "" || containsExactEmail(headerText, target), nil
+}
+
+func parseForwardedMessage(msg *imap.Message, raw []byte, folder, target string) (*FullMessage, bool, error) {
+	parsed, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return nil, false, err
+	}
+	headerText := strings.Join([]string{
+		parsed.Header.Get("Delivered-To"), parsed.Header.Get("X-Original-To"),
+		parsed.Header.Get("Envelope-To"), parsed.Header.Get("Resent-To"),
+		parsed.Header.Get("To"), parsed.Header.Get("Cc"),
+	}, "\n")
+	body, bodyErr := readBody(parsed)
+	if bodyErr != nil {
+		body = ""
+	}
+	matches := target == "" || containsExactEmail(headerText+"\n"+body, target)
+	base := toMessage(msg)
+	base.Folder = folder
+	if base.Subject == "" {
+		base.Subject = decodeHeader(parsed.Header.Get("Subject"))
+	}
+	if base.From == "" {
+		base.From = decodeHeader(parsed.Header.Get("From"))
+	}
+	if base.To == "" {
+		base.To = decodeHeader(parsed.Header.Get("To"))
+	}
+	if base.Date == "" {
+		if parsedDate, dateErr := mail.ParseDate(parsed.Header.Get("Date")); dateErr == nil {
+			base.Date = parsedDate.Format(time.RFC3339)
+		}
+	}
+	preview := strings.Join(strings.Fields(body), " ")
+	runes := []rune(preview)
+	if len(runes) > 240 {
+		preview = string(runes[:240])
+	}
+	base.Preview = preview
+	base.Code = ExtractVerificationCode(base.Subject + "\n" + body)
+	return &FullMessage{Message: base, Body: strings.TrimSpace(body), ContentType: "text/plain"}, matches, nil
+}
+
+func containsExactEmail(value, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, candidate := range forwardedEmailPattern.FindAllString(value, -1) {
+		if strings.EqualFold(candidate, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // Disconnect 登出并关闭连接。
@@ -312,31 +565,27 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 		seqset.AddNum(uid)
 	}
 
-	// Web API 无法识别别名时才走这里。先取 MIME 结构，随后只截取实际正文 part，
-	// 避免 multipart 邮件的前几 KB 只有边界和附件头而没有可读摘要。
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, imap.FetchBodyStructure}
+	// 列表阶段一次批量取信封和最多 2KB 正文开头作为摘要；完整正文
+	// 仍严格等到用户点击后再读取，避免逐封追加网络请求。
+	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, previewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
 	go func() {
 		done <- c.cli.UidFetch(seqset, items, messages)
 	}()
 
-	var fetched []*imap.Message
+	var out []Message
 	for msg := range messages {
-		fetched = append(fetched, msg)
+		m := toMessage(msg)
+		if previewReader := msg.GetBody(previewSection); previewReader != nil {
+			m.Preview = previewFromRaw(previewReader)
+			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+		}
+		out = append(out, m)
 	}
 	if err := <-done; err != nil {
 		return nil, err
-	}
-	var out []Message
-	for _, msg := range fetched {
-		m := toMessage(msg)
-		if msg.BodyStructure != nil {
-			if part, ok := selectBodyPart(msg.BodyStructure); ok {
-				m.Preview, _ = c.fetchPreview(msg.Uid, part)
-			}
-		}
-		out = append(out, m)
 	}
 	return out, nil
 }
@@ -521,12 +770,86 @@ func previewFromRaw(r io.Reader) string {
 	if err != nil {
 		return ""
 	}
-	text := stripHTML(string(raw))
+	text := string(raw)
+	if body, ok := previewFromMIME(raw); ok {
+		text = body
+	} else {
+		text = stripHTML(text)
+	}
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) > 200 {
-		text = text[:200]
+	runes := []rune(text)
+	if len(runes) > 200 {
+		text = string(runes[:200])
 	}
 	return text
+}
+
+// previewFromMIME 解码列表阶段的 BODY[TEXT] 片段。
+// 对 multipart 邮件，BODY[TEXT] 往往从 boundary 开始而不是从完整邮件头开始；
+// 直接 stripHTML 会把 boundary 和 Content-Type 当正文显示。
+func previewFromMIME(raw []byte) (string, bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+
+	if message, err := mail.ReadMessage(bytes.NewReader(raw)); err == nil && message.Header.Get("Content-Type") != "" {
+		if body, bodyErr := readBody(message); bodyErr == nil && strings.TrimSpace(body) != "" {
+			return body, true
+		}
+	}
+
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	boundary := ""
+	for index, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "--") || len(line) <= 2 || index+1 >= len(lines) {
+			continue
+		}
+		candidate := strings.TrimSuffix(strings.TrimPrefix(line, "--"), "--")
+		if candidate == "" {
+			continue
+		}
+		for _, headerLine := range lines[index+1 : minInt(index+12, len(lines))] {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(headerLine)), "content-type:") {
+				boundary = candidate
+				break
+			}
+		}
+		if boundary != "" {
+			break
+		}
+	}
+	if boundary == "" {
+		return "", false
+	}
+
+	mr := multipart.NewReader(strings.NewReader(text), boundary)
+	var htmlFallback string
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		body, kind, ok := readPartBody(part)
+		if !ok || strings.TrimSpace(body) == "" {
+			continue
+		}
+		if kind == "text/plain" {
+			return body, true
+		}
+		if htmlFallback == "" {
+			htmlFallback = body
+		}
+	}
+	return htmlFallback, htmlFallback != ""
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 // decodeHeader 解码 RFC 2047 编码的邮件头(如 =?UTF-8?B?xxx?=)。

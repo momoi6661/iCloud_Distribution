@@ -9,8 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -22,6 +24,7 @@ type Share struct {
 	Alias     string `json:"alias"`
 	Label     string `json:"label,omitempty"`
 	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 // Store 分享链接存储,线程安全。
@@ -57,23 +60,37 @@ func NewStore(dataDir string) (*Store, error) {
 }
 
 // Create 为 (accountID, alias) 创建分享链接。同一别名重复调用返回已有链接。
-func (s *Store) Create(accountID, alias, label string) (*Share, error) {
+func (s *Store) Create(accountID, alias, label string, expiresMinutes ...int) (*Share, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	minutes := 0
+	if len(expiresMinutes) > 0 {
+		minutes = expiresMinutes[0]
+	}
+	if minutes < 0 || minutes > 5_256_000 {
+		return nil, fmt.Errorf("分享有效期必须是 0 到 5256000 分钟，0 表示永久")
+	}
+	duration := time.Duration(minutes) * time.Minute
 
-	// 幂等: 同一账号同一别名复用已有 token
-	for _, sh := range s.shares {
-		if sh.AccountID == accountID && sh.Alias == alias {
-			return sh, nil
+	// 永久链接保持旧版幂等行为；限时链接每次创建新的有效期。
+	if duration == 0 {
+		for _, sh := range s.shares {
+			if sh.AccountID == accountID && sh.Alias == alias && sh.ExpiresAt == "" {
+				return sh, nil
+			}
 		}
 	}
 
+	now := time.Now()
 	sh := &Share{
 		Token:     newToken(),
 		AccountID: accountID,
 		Alias:     alias,
 		Label:     label,
-		CreatedAt: time.Now().Format(time.RFC3339),
+		CreatedAt: now.Format(time.RFC3339),
+	}
+	if duration > 0 {
+		sh.ExpiresAt = now.Add(duration).Format(time.RFC3339)
 	}
 	s.shares[sh.Token] = sh
 	if err := s.save(); err != nil {
@@ -88,7 +105,11 @@ func (s *Store) Get(token string) (*Share, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sh, ok := s.shares[token]
-	return sh, ok
+	if !ok || shareExpired(sh, time.Now()) {
+		return nil, false
+	}
+	cp := *sh
+	return &cp, true
 }
 
 // List 返回指定账号的全部分享 (accountID 为空则返回全部)。
@@ -102,7 +123,16 @@ func (s *Store) List(accountID string) []*Share {
 			out = append(out, &cp)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
 	return out
+}
+
+func shareExpired(sh *Share, now time.Time) bool {
+	if sh == nil || sh.ExpiresAt == "" {
+		return false
+	}
+	expiresAt, err := time.Parse(time.RFC3339, sh.ExpiresAt)
+	return err != nil || !now.Before(expiresAt)
 }
 
 // Delete 吊销分享链接。
@@ -115,6 +145,45 @@ func (s *Store) Delete(token string) bool {
 	delete(s.shares, token)
 	_ = s.save()
 	return true
+}
+
+// DeleteMany 批量吊销分享链接，并只写入一次持久化文件。
+func (s *Store) DeleteMany(tokens []string) (deleted, notFound int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unique := make([]string, 0, len(tokens))
+	seen := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		unique = append(unique, token)
+	}
+	removed := make(map[string]*Share, len(unique))
+	for _, token := range unique {
+		sh, ok := s.shares[token]
+		if !ok {
+			notFound++
+			continue
+		}
+		removed[token] = sh
+		delete(s.shares, token)
+		deleted++
+	}
+	if deleted == 0 {
+		return 0, notFound, nil
+	}
+	if err := s.save(); err != nil {
+		for token, sh := range removed {
+			s.shares[token] = sh
+		}
+		return 0, notFound, err
+	}
+	return deleted, notFound, nil
 }
 
 func (s *Store) save() error {
