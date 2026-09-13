@@ -13,6 +13,9 @@ func TestExtractVerificationCode(t *testing.T) {
 		{"Keyword beats year", "Acme 2026. Security code: 987654", "987654"},
 		{"Reject year only", "Copyright 2026 Acme", ""},
 		{"Reject repeated digits", "Your code is 000000", ""},
+		{"Reject bare order number", "订单号 482913，金额 2026 元", ""},
+		{"Reject bare phone number", "联系电话 13800138000", ""},
+		{"Chinese security code", "本次安全码：A7K92P", "A7K92P"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -214,7 +214,8 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 		},
 	}}
 	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem(), previewSection.FetchItem()}
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem(), previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
 	go func() { done <- c.cli.UidFetch(seqset, items, messages) }()
@@ -233,6 +234,12 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 			if previewReader := msg.GetBody(previewSection); previewReader != nil {
 				summary.Preview = previewFromRaw(previewReader)
 				summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
+			}
+			if summary.Preview == "" {
+				if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
+					summary.Preview = previewFromRaw(rawReader)
+					summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
+				}
 			}
 			out = append(out, *summary)
 		}
@@ -568,7 +575,8 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 	// 列表阶段一次批量取信封和最多 2KB 正文开头作为摘要；完整正文
 	// 仍严格等到用户点击后再读取，避免逐封追加网络请求。
 	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, previewSection.FetchItem()}
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
 	go func() {
@@ -581,6 +589,12 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 		if previewReader := msg.GetBody(previewSection); previewReader != nil {
 			m.Preview = previewFromRaw(previewReader)
 			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+		}
+		if m.Preview == "" {
+			if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
+				m.Preview = previewFromRaw(rawReader)
+				m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+			}
 		}
 		out = append(out, m)
 	}
