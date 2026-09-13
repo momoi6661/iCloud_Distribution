@@ -59,7 +59,7 @@ func NewStore(dataDir string) (*Store, error) {
 	return s, nil
 }
 
-// Create 为 (accountID, alias) 创建分享链接。同一别名重复调用返回已有链接。
+// Create 为 (accountID, alias) 创建分享链接。同一别名允许创建多个链接。
 func (s *Store) Create(accountID, alias, label string, expiresMinutes ...int) (*Share, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,15 +71,6 @@ func (s *Store) Create(accountID, alias, label string, expiresMinutes ...int) (*
 		return nil, fmt.Errorf("分享有效期必须是 0 到 5256000 分钟，0 表示永久")
 	}
 	duration := time.Duration(minutes) * time.Minute
-
-	// 永久链接保持旧版幂等行为；限时链接每次创建新的有效期。
-	if duration == 0 {
-		for _, sh := range s.shares {
-			if sh.AccountID == accountID && sh.Alias == alias && sh.ExpiresAt == "" {
-				return sh, nil
-			}
-		}
-	}
 
 	now := time.Now()
 	sh := &Share{

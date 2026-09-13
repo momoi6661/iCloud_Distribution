@@ -5,6 +5,11 @@ import Icon from '../components/Icon'
 
 const dateText = (date?: string) => date ? new Date(date).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 
+function InlinePublicMailRow({ item, selected, loading, error, method, onOpen, onClose, onRetry, onCopyCode }: { item: MailMessage; selected: FullMailMessage | null; loading: boolean; error: string; method: MailReadMethod; onOpen: () => void; onClose: () => void; onRetry: () => void; onCopyCode: (code: string) => void }) {
+  const expanded = selected?.id === item.id && selected.folder === item.folder
+  return <div className={`mail-item ${expanded ? 'expanded' : ''}`}><button className={`mail-row mail-row-button public-mail-row ${expanded ? 'selected' : ''}`} onClick={onOpen} aria-expanded={expanded}><div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div><div><strong>{item.subject || '（无主题）'}</strong><span>{item.from}</span>{item.preview && <small>{item.preview}</small>}{item.code && <small className="mail-code-hint">验证码：{item.code}</small>}</div><time>{dateText(item.date)}</time></button>{expanded && <div className="inline-mail-detail public-inline-mail-detail" aria-live="polite"><div className="inline-mail-detail-head"><div><span className="eyebrow">邮件正文</span><h2>{selected.subject || '（无主题）'}</h2><p>{selected.from} · {dateText(selected.date)}</p></div><div className="inline-actions"><button className="button small secondary" onClick={onClose}>收起</button>{selected.code && <button className="button small secondary" onClick={() => onCopyCode(selected.code || '')}><Icon name="copy" size={15} />复制验证码</button>}</div></div>{loading ? <div className="inbox-reader-state" role="status"><span className="message-loading-bar" /><strong>正在读取正文</strong></div> : error ? <div className="inbox-reader-state error-state" role="alert"><strong>正文读取失败</strong><small>{error}</small><button className="button secondary" onClick={onRetry}>重新读取</button></div> : method === 'web_api' ? <div className="inline-mail-body">{selected.preview || '这封邮件没有可显示的摘要。'}</div> : <div className="inline-mail-body">{selected.body || '这封邮件没有可显示的正文。'}</div>}</div>}</div>
+}
+
 export default function SharePage() {
   const { token = '' } = useParams()
   const [alias, setAlias] = useState('')
@@ -16,6 +21,7 @@ export default function SharePage() {
   const [messageError, setMessageError] = useState('')
   const [loading, setLoading] = useState(true)
   const [messageLoading, setMessageLoading] = useState(false)
+  const [copyNotice, setCopyNotice] = useState('')
   const messageRequest = useRef(0)
 
   const load = async () => {
@@ -63,27 +69,24 @@ export default function SharePage() {
   }
 
   const copyCode = async (code: string) => {
-    try { await navigator.clipboard.writeText(code) } catch { return }
+    try { await navigator.clipboard.writeText(code); setCopyNotice('验证码已复制') } catch { setCopyNotice('复制失败，请手动复制') }
+  }
+
+  const copyAlias = async () => {
+    try { await navigator.clipboard.writeText(alias); setCopyNotice('邮箱地址已复制') } catch { setCopyNotice('复制失败，请手动复制') }
   }
 
   if (pageError) return <main className="public-share"><div className="share-error"><div className="form-icon"><Icon name="alert" /></div><span className="eyebrow">共享收件箱</span><h1>链接不可用</h1><p>{pageError}</p><button className="button secondary" onClick={load}>重新加载</button></div></main>
 
   return <main className="public-share">
+    {copyNotice && <div className="notice toast" role="status" aria-live="polite"><span>{copyNotice}</span><button className="text-button" onClick={() => setCopyNotice('')}>关闭</button></div>}
     <header className="public-header"><span className="auth-brand">iCloud 邮箱共享</span><span className="status status-ready">只读访问</span></header>
     <section className="public-card panel">
-      {selected ? <>
-        <div className="public-card-header public-message-header">
-          <div><button className="back-link public-message-back" onClick={closeMessage}><Icon name="back" size={16} />邮件列表</button><span className="eyebrow">邮件正文</span><h1>{selected.subject || '（无主题）'}</h1><p className="public-identity">{selected.from} · {dateText(selected.date)}</p></div>
-          {selected.code && <button className="button secondary small" onClick={() => void copyCode(selected.code || '')}><Icon name="copy" size={15} />复制验证码 {selected.code}</button>}
-        </div>
-        <div className="public-message-view" aria-live="polite">
-          {messageLoading ? <div className="inbox-reader-state" role="status"><span className="message-loading-bar" /><strong>正在读取正文</strong><small>邮件列表已经保留，返回后可继续查看。</small></div> : messageError ? <div className="inbox-reader-state error-state" role="alert"><strong>正文读取失败</strong><small>{messageError}</small><button className="button secondary" onClick={() => openMessage(selected)}>重新读取</button></div> : <div className="public-message-body">{method === 'web_api' ? selected.preview || '这封邮件没有可显示的摘要。' : selected.body || '这封邮件没有可显示的正文。'}</div>}
-        </div>
-      </> : <>
-        <div className="public-card-header"><div><span className="eyebrow">共享收件箱</span><h1>{alias || '共享邮箱'}</h1><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><button className="button secondary small" onClick={load} disabled={loading}><Icon name="grid" size={15} />{loading ? '读取中…' : '刷新'}</button></div>
+      <>
+        <div className="public-card-header"><div className="public-share-heading"><span className="eyebrow">共享收件箱</span><div className="public-alias-line"><h1>{alias || '共享邮箱'}</h1>{alias && <button className="icon-button copy-alias-button" aria-label="复制邮箱地址" title="复制邮箱地址" onClick={() => void copyAlias()}><Icon name="copy" size={17} /></button>}</div><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><button className="icon-button share-refresh-button" aria-label={loading ? '正在刷新邮件' : '刷新邮件列表'} title={loading ? '正在刷新邮件' : '刷新邮件列表'} onClick={() => void load()} disabled={loading}><Icon name="refresh" size={18} /></button></div>
         {method === 'web_api' && <div className="inline-banner">当前链接通过 Web API 提供邮件摘要，完整正文需要 IMAP。</div>}
-        {loading && messages.length === 0 ? <div className="public-mail-loading" role="status"><strong>正在读取邮件列表</strong><span>正在获取标题、发件人和简短正文摘要。</span></div> : messages.length === 0 ? <div className="empty-state small-empty"><h3>还没有邮件。</h3><p>刷新收件箱后，新邮件会显示在这里。</p></div> : <div className="mail-list public-mail-list">{messages.map((item) => <button className="mail-row mail-row-button public-mail-row" key={`${item.folder}-${item.id}`} onClick={() => openMessage(item)}><div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div><div><strong>{item.subject || '（无主题）'}</strong><span>{item.from}</span>{item.preview && <small>{item.preview}</small>}{item.code && <small className="mail-code-hint">验证码：{item.code}</small>}</div><time>{dateText(item.date)}</time></button>)}</div>}
-      </>}
+        {loading && messages.length === 0 ? <div className="public-mail-loading" role="status"><strong>正在读取邮件列表</strong><span>正在获取标题、发件人和简短正文摘要。</span></div> : messages.length === 0 ? <div className="empty-state small-empty"><h3>还没有邮件。</h3><p>刷新收件箱后，新邮件会显示在这里。</p></div> : <div className="mail-list public-mail-list">{messages.map((item) => <InlinePublicMailRow item={item} selected={selected} loading={messageLoading} error={messageError} method={method} onOpen={() => void openMessage(item)} onClose={closeMessage} onRetry={() => void openMessage(item)} onCopyCode={(code) => void copyCode(code)} key={`${item.folder}-${item.id}`} />)}</div>}
+      </>
       <p className="public-footnote">此链接仅限只读访问 · {expiresAt ? `有效至 ${dateText(expiresAt)}` : '永久有效'}</p>
     </section>
   </main>

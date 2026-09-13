@@ -91,6 +91,10 @@ export interface LoginStartResult {
   status: 'done' | 'otp_required'
   session_id?: string
   cookies_count?: number
+  method?: 'device' | 'sms'
+  sms_sent?: boolean
+  phones?: { id: number; numberWithDialCode: string }[]
+  warning?: string
 }
 
 export interface BatchResult {
@@ -202,7 +206,7 @@ export const api = {
   batchDeleteShares: (tokens: string[]) => request<BatchShareResult>('POST', '/api/shares/batch/delete', { tokens }),
 
   publicShareInfo: (token: string) => request<{ alias: string; label?: string; created_at: string; expires_at?: string }>('GET', `/api/public/share/${token}`),
-  publicShareInbox: (token: string, limit = 30, days = 7) => request<{ alias: string; count: number; method: MailReadMethod; messages: MailMessage[] }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}`),
+  publicShareInbox: (token: string, limit = 30, days = 7) => request<{ alias: string; count: number; method: MailReadMethod; messages: MailMessage[] }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}&refresh=${Date.now()}`),
   publicShareMessage: (token: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/public/share/${token}/message?uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
 
   inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto') => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&method=${encodeURIComponent(method)}`),

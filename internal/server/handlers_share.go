@@ -119,6 +119,8 @@ func (s *Server) publicShareInfo(c *gin.Context) {
 //
 //	GET /api/public/share/:token/inbox?limit=30&days=7
 func (s *Server) publicShareInbox(c *gin.Context) {
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+	c.Header("Pragma", "no-cache")
 	sh, exists := s.shares.Get(c.Param("token"))
 	if !exists {
 		fail(c, http.StatusNotFound, "分享链接不存在、已过期或已吊销")

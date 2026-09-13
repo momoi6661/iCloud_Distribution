@@ -116,12 +116,31 @@ func (s *Server) loginStart(c *gin.Context) {
 		}
 		ok(c, gin.H{"status": "done", "cookies_count": len(client.Cookies)})
 	case errors.Is(err, hme.ErrOTPRequired):
-		// 需要 2FA: 保存会话,自动请求推送验证码到受信任设备 (尽力而为)
-		if err := client.ResendOTP(); err != nil {
-			log.Printf("自动推送 2FA 验证码失败 (account=%s): %v", id, err)
+		// 需要 2FA: 优先获取第一个受信任手机号并发送短信。手机号接口偶尔
+		// 会被 Apple 拒绝，但不能因此阻断已建立的登录会话或把它显示成失败。
+		phones, phoneErr := client.TrustedPhones()
+		method := "device"
+		smsSent := false
+		warning := ""
+		if phoneErr == nil && len(phones) > 0 {
+			if err := client.SendSMS(phones[0].ID); err != nil {
+				warning = "手机号已获取，但短信发送失败，可改用设备推送"
+				log.Printf("自动发送短信验证码失败 (account=%s): %v", id, err)
+			} else {
+				method = "sms"
+				smsSent = true
+			}
+		} else {
+			warning = "已进入双重验证，请使用设备推送；手机号列表暂时不可用"
+			if phoneErr != nil {
+				log.Printf("获取受信任手机号失败 (account=%s): %v", id, phoneErr)
+			}
+			if err := client.ResendOTP(); err != nil {
+				log.Printf("自动推送 2FA 验证码失败 (account=%s): %v", id, err)
+			}
 		}
 		sessionID := s.logins.Put(id, client)
-		ok(c, gin.H{"status": "otp_required", "session_id": sessionID})
+		ok(c, gin.H{"status": "otp_required", "session_id": sessionID, "method": method, "sms_sent": smsSent, "phones": phones, "warning": warning})
 	default:
 		msg := err.Error()
 		if isSessionError(msg) {
