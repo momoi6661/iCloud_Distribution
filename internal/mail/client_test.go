@@ -72,6 +72,13 @@ func TestDecodePreviewBodyFromSelectedHTMLPart(t *testing.T) {
 	}
 }
 
+func TestPreviewFromRawDecodesQuotedPrintableFragment(t *testing.T) {
+	got := previewFromRaw(strings.NewReader("Your verification code is 482913=2E=20Please use it now"))
+	if !strings.Contains(got, "verification code is 482913") {
+		t.Fatalf("previewFromRaw() = %q, want decoded verification text", got)
+	}
+}
+
 func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
 	raw := "--_NmP-7192ffa6f6d1a458-Part_1\r\n" +
 		"Content-Type: text/plain; charset=utf-8\r\n" +

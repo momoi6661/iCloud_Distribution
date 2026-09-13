@@ -789,6 +789,15 @@ func previewFromRaw(r io.Reader) string {
 	if body, ok := previewFromMIME(raw); ok {
 		text = body
 	} else {
+		// IMAP partial fetches can start inside a quoted-printable body and
+		// therefore no longer contain enough MIME headers for previewFromMIME.
+		// Decode the common transfer markers before stripping HTML so fragments
+		// such as "Your code is 482913=2E=20" remain readable and searchable.
+		if strings.Contains(text, "=20") || strings.Contains(text, "=3D") || strings.Contains(text, "=2E") || strings.Contains(text, "=0A") {
+			if decoded, decodeErr := io.ReadAll(quotedprintable.NewReader(strings.NewReader(text))); decodeErr == nil {
+				text = string(decoded)
+			}
+		}
 		text = stripHTML(text)
 	}
 	text = stripForwardedHeaderPreamble(text)
