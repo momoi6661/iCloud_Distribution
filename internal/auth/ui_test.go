@@ -11,16 +11,16 @@ func TestNewUIAuth_EmptyToken(t *testing.T) {
 	}
 }
 
-func TestUIAuth_CheckToken(t *testing.T) {
+func TestUIAuth_CheckPassword(t *testing.T) {
 	a := NewUIAuth("secret123")
 
-	if !a.CheckToken("secret123") {
+	if !a.CheckPassword("secret123") {
 		t.Error("正确口令应通过校验")
 	}
-	if a.CheckToken("wrong") {
+	if a.CheckPassword("wrong") {
 		t.Error("错误口令不应通过校验")
 	}
-	if a.CheckToken("") {
+	if a.CheckPassword("") {
 		t.Error("空口令不应通过校验")
 	}
 }

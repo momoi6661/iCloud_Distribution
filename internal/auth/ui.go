@@ -1,9 +1,6 @@
 // Package auth - UI 访问鉴权。
 //
-// 两种模式:
-//   1. 启动令牌模式: -token / HME_UI_TOKEN 提供静态口令 (适合自动化/Docker)
-//   2. 管理员账号模式 (默认): 首次访问 Web UI 时创建用户名+密码,
-//      凭证存 data/admin.json (bcrypt),改密码后旧会话全部失效
+// 登录密码由 HME_UI_PASSWORD 环境变量提供，不在应用数据中创建或存储用户。
 //
 // 会话 Cookie 格式: "<unix_expiry>|<hmac_sha256(expiry, secret)>",
 // HttpOnly + SameSite=Strict,有效期 12 小时。
@@ -31,27 +28,18 @@ type UIAuth struct {
 	secretFn func() []byte
 }
 
-// NewUIAuth 令牌模式: token 为空时返回 nil (表示关闭鉴权)。
-func NewUIAuth(token string) *UIAuth {
-	if token == "" {
+// NewUIAuth 从环境变量提供的密码派生会话签名密钥。
+func NewUIAuth(password string) *UIAuth {
+	if password == "" {
 		return nil
 	}
-	sum := sha256.Sum256([]byte("hme-ui:" + token))
+	sum := sha256.Sum256([]byte("hme-ui:" + password))
 	return &UIAuth{secretFn: func() []byte { return sum[:] }}
 }
 
-// NewUIAuthFromCredentials 管理员账号模式: 密钥派生自存储的密码哈希,
-// 修改密码后旧会话自动失效。
-func NewUIAuthFromCredentials(creds *CredentialStore) *UIAuth {
-	return &UIAuth{secretFn: func() []byte {
-		sum := sha256.Sum256([]byte("hme-ui:" + creds.SessionSecret()))
-		return sum[:]
-	}}
-}
-
-// CheckToken 校验启动令牌 (仅令牌模式)。
-func (a *UIAuth) CheckToken(token string) bool {
-	want := sha256.Sum256([]byte("hme-ui:" + token))
+// CheckPassword 以常量时间校验登录密码。
+func (a *UIAuth) CheckPassword(password string) bool {
+	want := sha256.Sum256([]byte("hme-ui:" + password))
 	return subtle.ConstantTimeCompare(want[:], a.secretFn()) == 1
 }
 

@@ -5,12 +5,11 @@
 //	./icloud_distribution                       # 默认 :6981
 //	./icloud_distribution -addr :9000           # 指定端口
 //	./icloud_distribution -data ./data          # 指定数据目录
-//	./icloud_distribution -token <口令>          # 启用 UI 访问鉴权
 //	./icloud_distribution -debug                # 调试模式 (Gin 请求日志)
 //
 // 环境变量:
 //
-//	HME_UI_TOKEN  UI 访问口令 (与 -token 等价,命令行优先)
+//	HME_UI_PASSWORD  UI 登录密码 (必填)
 package main
 
 import (
@@ -28,13 +27,12 @@ import (
 func main() {
 	addr := flag.String("addr", ":6981", "HTTP 监听地址")
 	dataDir := flag.String("data", "./data", "数据目录 (accounts.json 存放位置)")
-	token := flag.String("token", "", "UI 访问口令 (也可用环境变量 HME_UI_TOKEN)")
 	debug := flag.Bool("debug", false, "调试模式 (启用 Gin 调试日志)")
 	flag.Parse()
 
-	uiToken := *token
-	if uiToken == "" {
-		uiToken = os.Getenv("HME_UI_TOKEN")
+	uiPassword := os.Getenv("HME_UI_PASSWORD")
+	if uiPassword == "" {
+		log.Fatal("缺少环境变量 HME_UI_PASSWORD，服务拒绝启动")
 	}
 
 	log.Printf("iCloud Distribution 启动 addr=%s", *addr)
@@ -58,22 +56,10 @@ func main() {
 		log.Fatalf("初始化分享存储失败: %v", err)
 	}
 
-	// 鉴权: -token/HME_UI_TOKEN 为令牌模式; 否则为管理员账号模式 (首跑创建)
-	var ui *auth.UIAuth
-	var creds *auth.CredentialStore
-	if uiToken != "" {
-		ui = auth.NewUIAuth(uiToken)
-		log.Printf("鉴权模式: 启动令牌")
-	} else {
-		creds, err = auth.NewCredentialStore(abs)
-		if err != nil {
-			log.Fatalf("初始化凭证存储失败: %v", err)
-		}
-		ui = auth.NewUIAuthFromCredentials(creds)
-		log.Printf("鉴权模式: 管理员账号 (initialized=%v)", creds.Initialized())
-	}
+	ui := auth.NewUIAuth(uiPassword)
+	log.Printf("鉴权模式: 环境变量密码")
 
-	srv := server.New(mgr, logins, ui, creds, shares, server.StaticFS(), *debug)
+	srv := server.New(mgr, logins, ui, shares, server.StaticFS(), *debug)
 
 	log.Printf("HTTP 服务就绪 addr=%s", *addr)
 	if err := srv.Run(*addr); err != nil {

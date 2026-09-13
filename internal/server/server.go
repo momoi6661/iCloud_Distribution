@@ -5,7 +5,7 @@
 //   - 两段式自动授权 (login/start → login/otp)
 //   - HME 别名管理 (创建/批量创建/停用/激活/删除)
 //   - 邮件读取 (IMAP 优先,Web API 回退)
-//   - UI 访问鉴权 (可选,设置 token 后所有 API 需要会话 Cookie)
+//   - UI 访问鉴权 (由 HME_UI_PASSWORD 提供密码,所有管理 API 需要会话 Cookie)
 package server
 
 import (
@@ -25,22 +25,20 @@ type Server struct {
 	mgr    *account.Manager
 	logins *auth.LoginStore
 	ui     *auth.UIAuth // nil 表示关闭 UI 鉴权
-	creds  *auth.CredentialStore
 	shares *share.Store
 	r      *gin.Engine
 	static fs.FS // 前端构建产物 (web/dist)
 }
 
 // New 创建 Server。static 为前端构建产物目录 (embed.FS 的子目录)。
-// ui 为 nil 且 creds 未初始化时,API 暂时放行,等待首次访问创建管理员账号。
-func New(mgr *account.Manager, logins *auth.LoginStore, ui *auth.UIAuth, creds *auth.CredentialStore, shares *share.Store, static fs.FS, debug bool) *Server {
+func New(mgr *account.Manager, logins *auth.LoginStore, ui *auth.UIAuth, shares *share.Store, static fs.FS, debug bool) *Server {
 	if !debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	if ui == nil && (creds == nil || !creds.Initialized()) {
-		log.Printf("提示: 未设置管理员账号,首次访问 Web UI 时请创建")
+	if ui == nil {
+		log.Printf("警告: UI 鉴权未配置")
 	}
-	s := &Server{mgr: mgr, logins: logins, ui: ui, creds: creds, shares: shares, static: static}
+	s := &Server{mgr: mgr, logins: logins, ui: ui, shares: shares, static: static}
 	s.r = gin.Default() // 自带 Logger + Recovery 中间件
 	s.register()
 	return s
@@ -61,7 +59,6 @@ func (s *Server) register() {
 		api.POST("/ui/login", s.uiLogin)
 		api.POST("/ui/logout", s.uiLogout)
 		api.GET("/ui/status", s.uiStatus)
-		api.POST("/ui/setup", s.uiSetup)
 
 		// ===== 公开分享端点 (免登录,只读) =====
 		api.GET("/public/share/:token", s.publicShareInfo)

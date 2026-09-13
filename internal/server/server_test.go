@@ -12,8 +12,7 @@ import (
 	"icloud_distribution/internal/share"
 )
 
-// newTestServer 构建一个启用 UI 鉴权的测试服务 (无网络依赖)。
-// token 为空时使用管理员账号模式 (未初始化)。
+// newTestServer 构建一个 UI 鉴权测试服务 (无网络依赖)。
 func newTestServer(t *testing.T, token string) *Server {
 	t.Helper()
 	mgr, err := account.NewManager(t.TempDir())
@@ -27,25 +26,14 @@ func newTestServer(t *testing.T, token string) *Server {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	var ui *auth.UIAuth
-	var creds *auth.CredentialStore
-	if token != "" {
-		ui = auth.NewUIAuth(token)
-	} else {
-		creds, err = auth.NewCredentialStore(t.TempDir())
-		if err != nil {
-			t.Fatalf("NewCredentialStore: %v", err)
-		}
-		ui = auth.NewUIAuthFromCredentials(creds)
-	}
-	return New(mgr, logins, ui, creds, shares, nil, true)
+	return New(mgr, logins, auth.NewUIAuth(token), shares, nil, true)
 }
 
 // loginAndGetCookie 完成 UI 登录并返回会话 Cookie。
 func loginAndGetCookie(t *testing.T, s *Server, token string) *http.Cookie {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"token":"`+token+`"}`))
+	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"password":"`+token+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -81,7 +69,7 @@ func TestUIAuth_Required(t *testing.T) {
 
 	// 错误口令 → 401
 	w = httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"token":"wrong"}`))
+	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"password":"wrong"}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -189,75 +177,14 @@ func TestAddAndListAccount(t *testing.T) {
 	}
 }
 
-func TestSetupFlow(t *testing.T) {
-	s := newTestServer(t, "") // 管理员账号模式,未初始化
-	h := s.Handler()
-
-	// 未初始化时 API 放行 (等待 setup)
+func TestSetupEndpointRemoved(t *testing.T) {
+	s := newTestServer(t, "test-token")
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts", nil))
-	if w.Code != http.StatusOK {
-		t.Errorf("未初始化时应放行, 实际 %d", w.Code)
-	}
-
-	// status 应显示未初始化
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/ui/status", nil))
-	var status struct {
-		Data struct {
-			Initialized bool `json:"initialized"`
-		} `json:"data"`
-	}
-	json.Unmarshal(w.Body.Bytes(), &status)
-	if status.Data.Initialized {
-		t.Error("初始应为未初始化")
-	}
-
-	// setup 创建管理员
-	w = httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/ui/setup", strings.NewReader(`{"username":"admin","password":"password123"}`))
 	req.Header.Set("Content-Type", "application/json")
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("setup 失败: %d %s", w.Code, w.Body.String())
-	}
-	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("setup 后应签发会话 Cookie")
-	}
-
-	// 重复 setup 应 403
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/ui/setup", strings.NewReader(`{"username":"x","password":"yyyyyy"}`))
-	req.Header.Set("Content-Type", "application/json")
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("重复 setup 应 403, 实际 %d", w.Code)
-	}
-
-	// 初始化后无 Cookie → 401
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts", nil))
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("初始化后未登录应 401, 实际 %d", w.Code)
-	}
-
-	// 错误密码登录 → 401
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"username":"admin","password":"wrong"}`))
-	req.Header.Set("Content-Type", "application/json")
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("错误密码应 401, 实际 %d", w.Code)
-	}
-
-	// 正确密码登录 → 200
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"username":"admin","password":"password123"}`))
-	req.Header.Set("Content-Type", "application/json")
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("正确密码应 200, 实际 %d: %s", w.Code, w.Body.String())
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("不应提供用户创建接口, 实际 %d", w.Code)
 	}
 }
 

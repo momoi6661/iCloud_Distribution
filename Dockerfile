@@ -5,7 +5,7 @@
 #   docker compose up -d --build
 # 或:
 #   docker build -t icloud_distribution .
-#   docker run -d -p 6981:6981 -e HME_UI_TOKEN=你的口令 \
+#   docker run -d -p 6981:6981 -e HME_UI_PASSWORD=你的密码 \
 #     -v $(pwd)/data:/app/data icloud_distribution
 # ============================================================
 
@@ -37,7 +37,7 @@ COPY --from=backend /app/icloud_distribution .
 VOLUME ["/app/data"]
 EXPOSE 6981
 
-# UI 访问口令在运行时通过 -e HME_UI_TOKEN=xxx 注入 (程序直接读环境变量,无需在此声明)
+# UI 登录密码在运行时通过 -e HME_UI_PASSWORD=xxx 注入 (程序直接读环境变量)
 
 ENTRYPOINT ["/app/icloud_distribution"]
 CMD ["-addr", ":6981", "-data", "/app/data"]

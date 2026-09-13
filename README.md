@@ -11,7 +11,7 @@ iCloud Hide My Email 多账号管理平台 —— 带 Web UI、交互式自动�
 - 📨 **邮件读取** —— IMAP（App 专用密码，优先）+ Web API（Cookie，回退）双路径；同时扫描收件箱与垃圾邮件文件夹；IMAP 连接池复用
 - 🔗 **分享链接** —— 为任意别名生成公开 token 链接，持链接者免登录只读查看该邮箱邮件，自动 30 秒轮询，可随时吊销
 - 👥 **多账号** —— 国区 (icloud.com.cn) / 国际区，支持 HTTP/SOCKS5 代理
-- 🔐 **UI 访问鉴权** —— 首跑创建管理员账号 (bcrypt)，HMAC 签名会话 Cookie；改密码旧会话全失效
+- 🔐 **UI 访问鉴权** —— 只接受 `HME_UI_PASSWORD` 环境变量中的密码，不创建用户；HMAC 签名会话 Cookie
 - 🎨 **现代 Web UI** —— React + Ant Design，明暗层次分明的邮件阅读体验
 - 🐳 **Docker 一键部署** —— 多阶段构建，单容器运行
 
@@ -25,9 +25,14 @@ cd iCloud_Distribution
 docker compose up -d --build
 ```
 
-打开 http://localhost:6981 —— **首次访问会引导你创建管理员用户名和密码**（bcrypt 存储在 `data/admin.json`），之后用它登录。数据持久化在 `./data/`。
+先设置登录密码，再启动服务：
 
-> 自动化场景也可以用静态口令跳过初始化：`HME_UI_TOKEN=xxx docker compose up -d --build`
+```bash
+export HME_UI_PASSWORD='请替换为强密码'
+docker compose up -d --build
+```
+
+打开 http://localhost:6981，登录页只需要输入这个密码。密码不会写入 `data/`。
 
 ### 方式二：本地构建
 
@@ -35,8 +40,7 @@ docker compose up -d --build
 
 ```bash
 make build                    # 前端构建 + Go 单二进制（内嵌前端）
-./icloud_distribution         # 首跑创建管理员账号
-# 或静态口令: ./icloud_distribution -token xxx
+HME_UI_PASSWORD='请替换为强密码' ./icloud_distribution
 ```
 
 ### 开发模式
@@ -123,7 +127,7 @@ go run ./cmd/hme-mail -account acc_xxx -imap -uid 3 -folder Junk
 
 - iCloud 密码仅存在于内存中的登录会话（TTL 5 分钟），**不落盘**
 - `data/accounts.json`、`data/shares.json`、`data/admin.json` 权限 0600，含敏感凭证，请妥善保护
-- 管理员密码以 bcrypt 哈希存储；会话签名密钥派生自密码哈希，改密码后旧会话全部失效
+- UI 登录密码仅从 `HME_UI_PASSWORD` 环境变量读取；会话签名密钥由环境密码派生，修改环境密码后旧会话全部失效
 - 分享链接任何人持有即可读邮件（设计如此），只发给信任的人；可随时吊销
 
 ## 测试

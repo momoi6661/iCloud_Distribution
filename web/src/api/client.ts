@@ -122,8 +122,6 @@ export interface BatchAccountResult {
 
 export interface UIStatus {
   auth_required: boolean
-  initialized: boolean
-  token_mode: boolean
   authenticated: boolean
 }
 
@@ -163,8 +161,7 @@ export interface OrganizerData {
 
 export const api = {
   uiStatus: () => request<UIStatus>('GET', '/api/ui/status'),
-  uiLogin: (req: { username?: string; password?: string; token?: string }) => request('POST', '/api/ui/login', req),
-  uiSetup: (username: string, password: string) => request('POST', '/api/ui/setup', { username, password }),
+  uiLogin: (password: string) => request('POST', '/api/ui/login', { password }),
   uiLogout: () => request('POST', '/api/ui/logout'),
 
   listAccounts: () => request<Account[]>('GET', '/api/accounts'),

@@ -5,10 +5,9 @@ services:
     ports:
       - "6981:6981"
     environment:
-      # 可选: 静态访问口令 (自动化场景)。不设置则为管理员账号模式,
-      # 首次访问 Web UI 时创建用户名+密码 (推荐)
-      - HME_UI_TOKEN=${HME_UI_TOKEN:-}
+      # 必填: 管理 UI 登录密码，不写入 data 或前端
+      - HME_UI_PASSWORD=${HME_UI_PASSWORD:?请先设置 HME_UI_PASSWORD}
     volumes:
-      # accounts.json / shares.json / admin.json 持久化到宿主机 ./data
+      # accounts.json / shares.json 持久化到宿主机 ./data
       - ./data:/app/data
     restart: unless-stopped
