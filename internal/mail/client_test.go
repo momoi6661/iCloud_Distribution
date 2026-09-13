@@ -98,6 +98,27 @@ func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
 	}
 }
 
+func TestPreviewFromRawReadsNestedForwardedMessage(t *testing.T) {
+	raw := "Content-Type: multipart/mixed; boundary=outer\r\n\r\n" +
+		"--outer\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"Return-path: sender@example.com\r\nOriginal-recipient: target@icloud.com\r\n\r\n" +
+		"--outer\r\n" +
+		"Content-Type: message/rfc822\r\n\r\n" +
+		"From: sender@example.com\r\n" +
+		"Subject: 登录验证码\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+		"输入此临时验证码以继续：320531\r\n" +
+		"--outer--\r\n"
+	got := previewFromRaw(strings.NewReader(raw))
+	if !strings.Contains(got, "320531") || strings.Contains(got, "Return-path") {
+		t.Fatalf("nested forwarded message was not selected: %q", got)
+	}
+	if code := ExtractVerificationCode(got); code != "320531" {
+		t.Fatalf("ExtractVerificationCode() = %q, want 320531", code)
+	}
+}
+
 func TestStripForwardedHeaderPreamble(t *testing.T) {
 	got := stripForwardedHeaderPreamble("Return-path: sender@example.com\nOriginal-Recipient: target@icloud.com\n\n你的验证码是 482913")
 	if got != "你的验证码是 482913" {

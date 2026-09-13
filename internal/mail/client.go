@@ -893,7 +893,7 @@ func previewFromMIME(raw []byte) (string, bool) {
 		if !ok || strings.TrimSpace(body) == "" {
 			continue
 		}
-		if kind == "text/plain" {
+		if kind == "text/plain" && !looksLikeForwardedHeader(body) {
 			return body, true
 		}
 		if htmlFallback == "" {
@@ -939,7 +939,7 @@ func readBody(msg *mail.Message) (string, error) {
 			if !ok {
 				continue
 			}
-			if kind == "text/plain" {
+			if kind == "text/plain" && !looksLikeForwardedHeader(body) {
 				return body, nil
 			}
 			if htmlFallback == "" {
@@ -969,6 +969,33 @@ func readPartBody(part *multipart.Part) (string, string, bool) {
 	if ct == "" {
 		ct = "text/plain"
 	}
+	// iCloud/邮件转发服务通常把原始邮件作为 message/rfc822 嵌套在外层
+	// multipart 中。外层往往只有 Return-path/Received 等转发头，真正的
+	// 主题、摘要和验证码都在这个嵌套邮件里。
+	mediaType, _, _ := mime.ParseMediaType(ct)
+	if strings.EqualFold(mediaType, "message/rfc822") {
+		raw, err := io.ReadAll(io.LimitReader(part, 2<<20))
+		if err != nil {
+			return "", "", false
+		}
+		nested, err := mail.ReadMessage(bytes.NewReader(raw))
+		if err != nil {
+			return "", "", false
+		}
+		body, err := readBody(nested)
+		if err != nil || strings.TrimSpace(body) == "" {
+			return "", "", false
+		}
+		kind := nested.Header.Get("Content-Type")
+		if strings.HasPrefix(strings.ToLower(kind), "multipart/") {
+			return body, "text/plain", true
+		}
+		kind, _, _ = mime.ParseMediaType(kind)
+		if kind == "" {
+			kind = "text/plain"
+		}
+		return body, strings.ToLower(kind), true
+	}
 	if strings.HasPrefix(ct, "multipart/") {
 		mr := multipart.NewReader(part, multipartBoundary(ct))
 		var htmlFallback string
@@ -981,7 +1008,7 @@ func readPartBody(part *multipart.Part) (string, string, bool) {
 			if !ok {
 				continue
 			}
-			if kind == "text/plain" {
+			if kind == "text/plain" && !looksLikeForwardedHeader(body) {
 				return body, kind, true
 			}
 			if htmlFallback == "" {
