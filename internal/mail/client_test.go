@@ -91,6 +91,13 @@ func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
 	}
 }
 
+func TestStripForwardedHeaderPreamble(t *testing.T) {
+	got := stripForwardedHeaderPreamble("Return-path: sender@example.com\nOriginal-Recipient: target@icloud.com\n\n你的验证码是 482913")
+	if got != "你的验证码是 482913" {
+		t.Fatalf("unexpected cleaned preview: %q", got)
+	}
+}
+
 func TestSelectBodyPartPrefersPlainAndSkipsAttachment(t *testing.T) {
 	structure := &imap.BodyStructure{
 		MIMEType: "multipart",

@@ -213,8 +213,8 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 			"Content-Type", "Content-Transfer-Encoding",
 		},
 	}}
-	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 16384}}
 	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem(), previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
@@ -574,8 +574,8 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 
 	// 列表阶段一次批量取信封和最多 2KB 正文开头作为摘要；完整正文
 	// 仍严格等到用户点击后再读取，避免逐封追加网络请求。
-	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 2048}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 16384}}
 	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, previewSection.FetchItem(), rawPreviewSection.FetchItem()}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
@@ -791,10 +791,38 @@ func previewFromRaw(r io.Reader) string {
 	} else {
 		text = stripHTML(text)
 	}
+	text = stripForwardedHeaderPreamble(text)
 	text = strings.Join(strings.Fields(text), " ")
 	runes := []rune(text)
 	if len(runes) > 200 {
 		text = string(runes[:200])
+	}
+	return text
+}
+
+// stripForwardedHeaderPreamble 去掉转发服务写入正文开头的原始邮件头。
+// 这些字段不是邮件内容，出现在摘要里会挤掉真正的正文，也会干扰验证码识别。
+func stripForwardedHeaderPreamble(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	headerNames := map[string]bool{
+		"return-path": true, "original-recipient": true, "delivered-to": true,
+		"received": true, "x-original-to": true, "envelope-to": true,
+		"resent-to": true, "x-forwarded-to": true, "content-type": true,
+	}
+	seenHeader := false
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if seenHeader {
+				return strings.Join(lines[index+1:], "\n")
+			}
+			continue
+		}
+		name, _, ok := strings.Cut(trimmed, ":")
+		if !ok || !headerNames[strings.ToLower(strings.TrimSpace(name))] {
+			break
+		}
+		seenHeader = true
 	}
 	return text
 }
