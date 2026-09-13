@@ -184,3 +184,18 @@ source_context: "web/src/pages/AccountDetail.tsx"
 ```
 
 Configure the mail reading method on the account detail shell, outside the inbox; share links stay in a searchable management list with active and expired states plus batch deletion.
+
+## 2026-09-13T05:58:42.853Z — expiry-presets-before-custom-input
+
+```omd-meta
+id: pref_mtzelb51_e96d2c71
+timestamp: 2026-09-13T05:58:42.853Z
+scope: components.input
+signal: user-correction
+confidence: explicit
+status: pending
+source_agent: codex
+source_context: "web/src/pages/AccountDetail.tsx"
+```
+
+Expiration fields present common duration presets first, including seven days, and reveal free-form duration input only when custom is selected.
