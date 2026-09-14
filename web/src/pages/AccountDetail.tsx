@@ -2144,7 +2144,7 @@ export default function AccountDetailPage({
           </div>
           <label className="field">
             <span>统一备注 <small>可选</small></span>
-            <textarea rows={4} value={batchNote} onChange={(event) => setBatchNote(event.target.value)} placeholder="例如：2026 年秋季注册账号" maxLength={2000} />
+            <textarea rows={4} value={batchNote} onChange={(event) => setBatchNote(event.target.value)} placeholder="例如：用于注册服务、客户联系或测试环境" maxLength={2000} />
           </label>
           <div className="drawer-actions">
             <button type="button" className="button secondary" onClick={() => setBatchOpen(false)} disabled={busy}>取消</button>
