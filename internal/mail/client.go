@@ -338,7 +338,11 @@ func (c *Client) fetchForwardedMessagesByAliases(uids []uint32, folder string, t
 			if summary.Preview == "" || looksLikeForwardedHeader(summary.Preview) {
 				if len(rawPreview) > 0 {
 					summary.Preview = previewFromRaw(bytes.NewReader(rawPreview))
-					summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
+				}
+			}
+			if len(rawPreview) > 0 {
+				if rawCode := verificationCodeFromRaw(rawPreview, summary.Subject); rawCode != "" {
+					summary.Code = rawCode
 				}
 			}
 			out = append(out, *summary)
@@ -563,10 +567,13 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
 		}
 		if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
-			rawPreview := previewFromRaw(rawReader)
+			rawBytes, _ := io.ReadAll(io.LimitReader(rawReader, 262144))
+			rawPreview := previewFromRaw(bytes.NewReader(rawBytes))
+			if rawCode := verificationCodeFromRaw(rawBytes, m.Subject); rawCode != "" {
+				m.Code = rawCode
+			}
 			if rawPreview != "" && (m.Preview == "" || strings.Contains(m.Preview, "\uFFFD") || strings.Contains(m.Preview, "=")) {
 				m.Preview = rawPreview
-				m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
 			}
 		}
 		// days 过滤
@@ -721,10 +728,13 @@ func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {
 			m.Preview = previewFromRaw(previewReader)
 			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
 		}
-		if m.Preview == "" || looksLikeForwardedHeader(m.Preview) {
-			if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
-				m.Preview = previewFromRaw(rawReader)
-				m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+		if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
+			rawBytes, _ := io.ReadAll(io.LimitReader(rawReader, 262144))
+			if rawCode := verificationCodeFromRaw(rawBytes, m.Subject); rawCode != "" {
+				m.Code = rawCode
+			}
+			if m.Preview == "" || looksLikeForwardedHeader(m.Preview) {
+				m.Preview = previewFromRaw(bytes.NewReader(rawBytes))
 			}
 		}
 		out = append(out, m)
@@ -1043,6 +1053,28 @@ func previewFromRaw(r io.Reader) string {
 	if err != nil {
 		return ""
 	}
+	text := decodedTextFromRaw(raw)
+	runes := []rune(text)
+	if len(runes) > 200 {
+		text = string(runes[:200])
+	}
+	return text
+}
+
+// verificationCodeFromRaw scans the complete decoded list fragment while the
+// visible preview remains short. This catches codes located after the first
+// 200 characters in styled HTML emails.
+func verificationCodeFromRaw(raw []byte, subject string) string {
+	return ExtractVerificationCode(subject + "\n" + decodedStructuredTextFromRaw(raw))
+}
+
+func decodedTextFromRaw(raw []byte) string {
+	return strings.Join(strings.Fields(decodedStructuredTextFromRaw(raw)), " ")
+}
+
+// decodedStructuredTextFromRaw keeps block-level line breaks from HTML. The
+// verification scorer uses them to recognize a code displayed in its own box.
+func decodedStructuredTextFromRaw(raw []byte) string {
 	text := string(raw)
 	if body, ok := previewFromMIME(raw); ok {
 		text = body
@@ -1059,12 +1091,7 @@ func previewFromRaw(r io.Reader) string {
 		text = stripHTML(text)
 	}
 	text = stripForwardedHeaderPreamble(text)
-	text = strings.Join(strings.Fields(text), " ")
-	runes := []rune(text)
-	if len(runes) > 200 {
-		text = string(runes[:200])
-	}
-	return text
+	return strings.TrimSpace(text)
 }
 
 var quotedPrintableEscapePattern = regexp.MustCompile(`(?i)=[0-9a-f]{2}|=\r?\n`)

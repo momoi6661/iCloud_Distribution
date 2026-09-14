@@ -90,6 +90,17 @@ func TestNormalizePreviewTextDecodesICloudWebPreview(t *testing.T) {
 	}
 }
 
+func TestVerificationCodeFromRawScansBeyondVisiblePreview(t *testing.T) {
+	raw := []byte("<html><body><p>" + strings.Repeat("Nội dung giới thiệu ", 20) + "</p><p>Nhập mã xác minh tạm thời này để tiếp tục:</p><strong>968590</strong></body></html>")
+	preview := previewFromRaw(strings.NewReader(string(raw)))
+	if strings.Contains(preview, "968590") {
+		t.Fatal("fixture must place code after visible preview")
+	}
+	if got := verificationCodeFromRaw(raw, "Mã xác minh tạm thời của bạn cho ChatGPT"); got != "968590" {
+		t.Fatalf("verificationCodeFromRaw() = %q, want 968590", got)
+	}
+}
+
 func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
 	raw := "--_NmP-7192ffa6f6d1a458-Part_1\r\n" +
 		"Content-Type: text/plain; charset=utf-8\r\n" +

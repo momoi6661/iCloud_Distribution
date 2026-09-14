@@ -7,13 +7,20 @@ import (
 )
 
 var (
-	// 只有靠近明确验证码语义的候选值才允许展示，避免把年份、订单号、金额等
-	// 正文数字误判成验证码。
-	verificationKeywordPrefix      = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|一次性(?:验证码|代码)|安全码|安全代码|verification(?:\s+code)?|security(?:\s+code)?|one[-\s]?time\s+code|passcode|otp|\bcode\b)\s*(?:is|为|是|的)?\s*[:：=\-]?\s*((?:[A-Z0-9]\s*){4,10})`)
-	verificationKeywordSuffix      = regexp.MustCompile(`(?i)((?:[A-Z0-9]\s*){4,10})\s*(?:是你的验证码|为你的验证码|is your code|is your verification code)`)
-	verificationChineseInstruction = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|安全码|安全代码)[^\r\n:：=]{0,16}[:：=]\s*((?:[A-Z0-9]\s*){4,10})`)
-	yearCode                       = regexp.MustCompile(`^20[2-3]\d$`)
-	repeatedDigitCode              = regexp.MustCompile(`^(0{4,10}|1{4,10}|2{4,10}|3{4,10}|4{4,10}|5{4,10}|6{4,10}|7{4,10}|8{4,10}|9{4,10})$`)
+	// Keywords add confidence but are never required. A new mail language must
+	// not require another extraction rule.
+	verificationKeywordPrefix      = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|一次性(?:验证码|代码)|安全码|安全代码|verification(?:\s+code)?|security(?:\s+code)?|one[-\s]?time\s+code|passcode|otp|\bcode\b)\s*(?:is|为|是|的)?\s*[:：=\-]?\s*((?:[A-Z0-9][ \t-]*){4,10})`)
+	verificationKeywordSuffix      = regexp.MustCompile(`(?i)((?:[A-Z0-9][ \t-]*){4,10})\s*(?:是你的验证码|为你的验证码|is your code|is your verification code)`)
+	verificationChineseInstruction = regexp.MustCompile(`(?i)(?:验证码|校验码|动态码|安全码|安全代码)[^\r\n:：=]{0,16}[:：=]\s*((?:[A-Z0-9][ \t-]*){4,10})`)
+
+	// Generic shapes support numeric, spaced/dashed, and mixed alphanumeric OTPs.
+	digitCandidatePattern = regexp.MustCompile(`(?i)(^|[^A-Z0-9])((?:[0-9][ \t-]?){3,7}[0-9])([^A-Z0-9]|$)`)
+	alnumCandidatePattern = regexp.MustCompile(`(?i)(^|[^A-Z0-9])([A-Z0-9]{4,10})([^A-Z0-9]|$)`)
+	yearCode              = regexp.MustCompile(`^20[2-3]\d$`)
+	repeatedDigitCode     = regexp.MustCompile(`^(0{4,10}|1{4,10}|2{4,10}|3{4,10}|4{4,10}|5{4,10}|6{4,10}|7{4,10}|8{4,10}|9{4,10})$`)
+	positiveContext       = regexp.MustCompile(`(?i)(verification|security|one[-\s]?time|passcode|otp|pin|code|验证码|校验码|动态码|安全码)`)
+	negativeContext       = regexp.MustCompile(`(?i)(order|invoice|receipt|amount|total|price|phone|telephone|mobile|tel|tracking|reference|transaction|address|date|year|订单|发票|金额|合计|价格|电话|手机|运单|编号|流水号|日期)`)
+	technicalWord         = regexp.MustCompile(`^(?:HTTP|HTML|UTF8|BASE64|TOKEN|LOGIN|EMAIL|OUTLOOK|MICROSOFT)$`)
 )
 
 type verificationCandidate struct {
@@ -22,44 +29,116 @@ type verificationCandidate struct {
 	index int
 }
 
-// ExtractVerificationCode returns the most likely verification code in mail text.
-// Keyword-adjacent candidates win over bare numbers to avoid treating years and IDs as codes.
+// ExtractVerificationCode selects a likely OTP by shape and context. Language
+// words are optional evidence, not a gate.
 func ExtractVerificationCode(text string) string {
-	sources := []struct {
+	best := map[string]verificationCandidate{}
+	add := func(value string, score, index int) {
+		code := normalizeVerificationCode(value)
+		if code == "" {
+			return
+		}
+		candidate := verificationCandidate{code: code, score: score, index: index}
+		if current, ok := best[code]; !ok || score > current.score || (score == current.score && index < current.index) {
+			best[code] = candidate
+		}
+	}
+
+	// Explicitly anchored matches remain strongest when present.
+	for _, source := range []struct {
 		pattern *regexp.Regexp
 		score   int
 	}{
 		{verificationKeywordPrefix, 100},
 		{verificationChineseInstruction, 100},
 		{verificationKeywordSuffix, 100},
-	}
-	best := map[string]verificationCandidate{}
-	for _, source := range sources {
+	} {
 		for _, match := range source.pattern.FindAllStringSubmatchIndex(text, -1) {
-			if len(match) < 4 || match[2] < 0 {
-				continue
-			}
-			code := normalizeVerificationCode(text[match[2]:match[3]])
-			if code == "" {
-				continue
-			}
-			candidate := verificationCandidate{code: code, score: source.score, index: match[2]}
-			if current, ok := best[code]; !ok || candidate.score > current.score || (candidate.score == current.score && candidate.index < current.index) {
-				best[code] = candidate
+			if len(match) >= 4 && match[2] >= 0 {
+				add(text[match[2]:match[3]], source.score, match[2])
 			}
 		}
 	}
+
+	// Generic candidates work even when the surrounding language is unknown.
+	for _, match := range digitCandidatePattern.FindAllStringSubmatchIndex(text, -1) {
+		if len(match) >= 6 && match[4] >= 0 {
+			add(text[match[4]:match[5]], genericCandidateScore(text, match[4], match[5], 50), match[4])
+		}
+	}
+	for _, match := range alnumCandidatePattern.FindAllStringSubmatchIndex(text, -1) {
+		if len(match) < 6 || match[4] < 0 {
+			continue
+		}
+		value := text[match[4]:match[5]]
+		upper := strings.ToUpper(value)
+		if strings.ContainsAny(upper, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") && strings.ContainsAny(upper, "0123456789") {
+			add(value, genericCandidateScore(text, match[4], match[5], 35), match[4])
+		}
+	}
+
 	candidates := make([]verificationCandidate, 0, len(best))
 	for _, candidate := range best {
-		candidates = append(candidates, candidate)
+		// Generic candidates below this floor are more likely metadata or IDs.
+		if candidate.score >= 45 {
+			candidates = append(candidates, candidate)
+		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].score > candidates[j].score || (candidates[i].score == candidates[j].score && candidates[i].index < candidates[j].index)
+		return candidates[i].score > candidates[j].score ||
+			(candidates[i].score == candidates[j].score && candidates[i].index < candidates[j].index)
 	})
 	if len(candidates) == 0 {
 		return ""
 	}
+	// If two unanchored candidates are equally plausible, guessing is worse than
+	// showing no code. The user can still open the full message.
+	if len(candidates) > 1 && candidates[0].score < 100 && candidates[0].score == candidates[1].score {
+		return ""
+	}
 	return candidates[0].code
+}
+
+func genericCandidateScore(text string, start, end, base int) int {
+	code := normalizeVerificationCode(text[start:end])
+	score := base
+	switch len(code) {
+	case 6:
+		score += 20
+	case 5, 7:
+		score += 10
+	case 4, 8:
+		score += 5
+	}
+	left, right := start-64, end+64
+	if left < 0 {
+		left = 0
+	}
+	if right > len(text) {
+		right = len(text)
+	}
+	context := text[left:right]
+	if positiveContext.MatchString(context) {
+		score += 25
+	}
+	if negativeContext.MatchString(context) {
+		score -= 45
+	}
+	lineStart := strings.LastIndex(text[:start], "\n") + 1
+	lineEndOffset := strings.Index(text[end:], "\n")
+	lineEnd := len(text)
+	if lineEndOffset >= 0 {
+		lineEnd = end + lineEndOffset
+	}
+	line := strings.TrimSpace(text[lineStart:lineEnd])
+	if normalizeVerificationCode(line) == code {
+		// A code in its own visual block is a strong language-independent signal.
+		score += 30
+	}
+	if prefix := text[:start]; strings.HasSuffix(prefix, ":") || strings.HasSuffix(prefix, "：") || strings.HasSuffix(prefix, "=") {
+		score += 25
+	}
+	return score
 }
 
 func normalizeVerificationCode(value string) string {
@@ -77,7 +156,7 @@ func normalizeVerificationCode(value string) string {
 			return ""
 		}
 	}
-	if !hasDigit || yearCode.MatchString(code) || repeatedDigitCode.MatchString(code) {
+	if !hasDigit || yearCode.MatchString(code) || repeatedDigitCode.MatchString(code) || technicalWord.MatchString(code) {
 		return ""
 	}
 	return code
