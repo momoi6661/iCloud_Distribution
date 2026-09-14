@@ -6,6 +6,12 @@ import MailHTMLFrame from '../components/MailHTMLFrame'
 import { getInitialTheme, persistTheme, type ThemeMode } from '../theme'
 
 const dateText = (date?: string) => date ? new Date(date).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const newestFirst = (items: MailMessage[]) => [...items].sort((left, right) => {
+  const leftTime = Date.parse(left.date || '')
+  const rightTime = Date.parse(right.date || '')
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) return rightTime - leftTime
+  return right.id.localeCompare(left.id)
+})
 const urlPattern = /(https?:\/\/[^\s<]+)/g
 function MailBody({ text, html = false }: { text: string; html?: boolean }) {
   if (html && text.trim()) return <MailHTMLFrame html={text} />
@@ -59,7 +65,7 @@ export default function SharePage() {
     try {
       const inbox = await api.publicShareInbox(token)
       setAlias(inbox.alias)
-      setMessages(inbox.messages || [])
+      setMessages(newestFirst(inbox.messages || []))
       setMethod(inbox.method)
     } catch (error) {
       setPageError((error as Error).message)

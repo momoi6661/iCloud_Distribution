@@ -187,3 +187,15 @@ func TestSanitizeHTMLKeepsMailLayoutAndBlocksActiveContent(t *testing.T) {
 		}
 	}
 }
+
+func TestSortMessagesNewest(t *testing.T) {
+	messages := []Message{
+		{ID: "old", Date: "2026-09-12T22:02:00+08:00"},
+		{ID: "new", Date: "2026-09-14T13:23:00+08:00"},
+		{ID: "middle", Date: "2026-09-13T21:37:00+08:00"},
+	}
+	SortMessagesNewest(messages)
+	if messages[0].ID != "new" || messages[1].ID != "middle" || messages[2].ID != "old" {
+		t.Fatalf("messages are not newest first: %+v", messages)
+	}
+}

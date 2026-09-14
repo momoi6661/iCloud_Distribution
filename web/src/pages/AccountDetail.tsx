@@ -35,9 +35,18 @@ const dateText = (date?: string) =>
     : "—";
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+const newestFirst = <T extends { date?: string; id: string }>(items: T[]) =>
+  [...items].sort((left, right) => {
+    const leftTime = Date.parse(left.date || "");
+    const rightTime = Date.parse(right.date || "");
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+    return right.id.localeCompare(left.id);
+  });
 const normalizeInbox = (value: InboxData): InboxData => ({
   ...value,
-  messages: value.messages || [],
+  messages: newestFirst(value.messages || []),
 });
 const copyCode = async (code: string, setNotice: (value: string) => void) => {
   try {

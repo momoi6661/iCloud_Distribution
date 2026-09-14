@@ -134,6 +134,7 @@ func (s *Server) publicShareInbox(c *gin.Context) {
 		fail(c, http.StatusBadGateway, err.Error())
 		return
 	}
+	mail.SortMessagesNewest(messages)
 	for i := range messages {
 		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
 		if messages[i].Preview == "" && messages[i].Code != "" {

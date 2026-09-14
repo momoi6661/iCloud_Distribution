@@ -60,6 +60,7 @@ func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (str
 	if messages == nil {
 		messages = []mail.Message{}
 	}
+	mail.SortMessagesNewest(messages)
 	return "forward_imap", messages, nil
 }
 
@@ -81,6 +82,7 @@ func (s *Server) readICloudIMAPInbox(accountID, alias string, limit, days int) (
 	if messages == nil {
 		messages = []mail.Message{}
 	}
+	mail.SortMessagesNewest(messages)
 	return "imap", messages, nil
 }
 
@@ -102,6 +104,7 @@ func (s *Server) readWebInbox(accountID, alias string, limit int) (string, []mai
 			if messages == nil {
 				messages = []mail.Message{}
 			}
+			mail.SortMessagesNewest(messages)
 			return "web_api", messages, nil
 		}
 		lastErr = err

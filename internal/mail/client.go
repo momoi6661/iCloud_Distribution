@@ -42,6 +42,23 @@ type Message struct {
 	Folder  string `json:"folder,omitempty"` // 所在文件夹 (IMAP uid 按文件夹生效,读取正文时需要)
 }
 
+// SortMessagesNewest puts the most recent mail first. Different providers do
+// not guarantee the order of their search results, so every API boundary uses
+// this common ordering before rendering the list.
+func SortMessagesNewest(messages []Message) {
+	sort.SliceStable(messages, func(i, j int) bool {
+		left, leftErr := time.Parse(time.RFC3339, messages[i].Date)
+		right, rightErr := time.Parse(time.RFC3339, messages[j].Date)
+		if leftErr == nil && rightErr == nil && !left.Equal(right) {
+			return left.After(right)
+		}
+		if messages[i].Date != messages[j].Date {
+			return messages[i].Date > messages[j].Date
+		}
+		return messages[i].ID > messages[j].ID
+	})
+}
+
 // FullMessage 是一封邮件的完整内容(含正文)。
 type FullMessage struct {
 	Message

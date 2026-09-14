@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -352,6 +353,15 @@ func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
 		}
 		out = append(out, &cp)
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Status != out[j].Status {
+			return out[i].Status != statusDisabled
+		}
+		if out[i].CreatedAt != out[j].CreatedAt {
+			return out[i].CreatedAt > out[j].CreatedAt
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
