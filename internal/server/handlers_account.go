@@ -77,6 +77,7 @@ func (s *Server) deleteOrganizerGroup(c *gin.Context) {
 type aliasMetadataReq struct {
 	AliasID string `json:"alias_id"`
 	Email   string `json:"email"`
+	Label   string `json:"label"`
 	GroupID string `json:"group_id"`
 	Note    string `json:"note"`
 }
@@ -87,8 +88,21 @@ func (s *Server) updateAliasMetadata(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "参数错误: alias_id 必填 — "+err.Error())
 		return
 	}
+	if strings.TrimSpace(req.Label) != "" {
+		client, err := s.mgr.HMEClient(c.Param("id"), false)
+		if err != nil {
+			fail(c, http.StatusBadGateway, "连接 iCloud 失败: "+err.Error())
+			return
+		}
+		if err := client.UpdateMetadata(req.AliasID, req.Label); err != nil {
+			_ = s.mgr.SaveCookies(c.Param("id"), client.Cookies)
+			fail(c, http.StatusBadGateway, "修改 iCloud 别名名称失败: "+err.Error())
+			return
+		}
+		_ = s.mgr.SaveCookies(c.Param("id"), client.Cookies)
+	}
 	meta, err := s.mgr.UpdateAliasMetadata(c.Param("id"), account.AliasMetadata{
-		AliasID: req.AliasID, Email: req.Email, GroupID: req.GroupID, Note: req.Note,
+		AliasID: req.AliasID, Email: req.Email, Label: req.Label, GroupID: req.GroupID, Note: req.Note,
 	})
 	if err != nil {
 		organizerFail(c, err)

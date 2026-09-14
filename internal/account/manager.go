@@ -113,6 +113,7 @@ type LocalGroup struct {
 type AliasMetadata struct {
 	AliasID   string `json:"alias_id"`
 	Email     string `json:"email"`
+	Label     string `json:"label"`
 	GroupID   string `json:"group_id"`
 	Note      string `json:"note"`
 	UpdatedAt string `json:"updated_at"`

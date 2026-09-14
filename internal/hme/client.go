@@ -578,6 +578,30 @@ func (c *Client) UpdateForwardTo(forwardToEmail string) error {
 	return nil
 }
 
+// UpdateMetadata 修改 iCloud 隐藏邮箱的名称。
+// 备注字段由本项目本地管理，因此不会随请求同步到 iCloud。
+func (c *Client) UpdateMetadata(anonymousID, label string) error {
+	if err := c.resolveService(); err != nil {
+		return err
+	}
+	anonymousID = strings.TrimSpace(anonymousID)
+	label = strings.TrimSpace(label)
+	if anonymousID == "" || label == "" {
+		return fmt.Errorf("别名 ID 和名称不能为空")
+	}
+	body, err := c.request("POST", c.serviceURL+"/v1/hme/updateMetaData", map[string]string{
+		"anonymousId": anonymousID,
+		"label":       label,
+	}, 0, 2)
+	if err != nil {
+		return err
+	}
+	if !gjson.Get(body, "success").Bool() {
+		return fmt.Errorf("修改别名名称失败: %s", gjson.Get(body, "error.errorMessage").String())
+	}
+	return nil
+}
+
 // DeactivateHME 停用别名(可恢复)。
 func (c *Client) DeactivateHME(anonymousID string) (bool, error) {
 	if err := c.resolveService(); err != nil {

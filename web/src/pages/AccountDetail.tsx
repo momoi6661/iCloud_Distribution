@@ -433,6 +433,7 @@ export default function AccountDetailPage({
   const [forwardOpen, setForwardOpen] = useState(false);
   const [organizerOpen, setOrganizerOpen] = useState(false);
   const [editorAlias, setEditorAlias] = useState<Alias | null>(null);
+  const [editorLabel, setEditorLabel] = useState("");
   const [editorGroupId, setEditorGroupId] = useState("");
   const [editorNote, setEditorNote] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Alias | null>(null);
@@ -1040,6 +1041,7 @@ export default function AccountDetailPage({
   };
   const openAliasEditor = (item: Alias) => {
     const current = metadata[item.anonymousId];
+    setEditorLabel(item.label || current?.label || "");
     setEditorGroupId(current?.group_id || "");
     setEditorNote(current?.note || "");
     setEditorAlias(item);
@@ -1051,6 +1053,7 @@ export default function AccountDetailPage({
     const nextMeta: AliasMetadata = {
       alias_id: editorAlias.anonymousId,
       email: editorAlias.email,
+      label: editorLabel.trim(),
       group_id: editorGroupId,
       note: editorNote,
       updated_at: new Date().toISOString(),
@@ -1061,8 +1064,15 @@ export default function AccountDetailPage({
         ...current,
         [editorAlias.anonymousId]: nextMeta,
       }));
+      setAliases((current) =>
+        current.map((item) =>
+          item.anonymousId === editorAlias.anonymousId
+            ? { ...item, label: nextMeta.label }
+            : item,
+        ),
+      );
       setEditorAlias(null);
-      setNotice("别名的本地归类与备注已保存。");
+      setNotice("别名名称已同步到 iCloud，分组和备注已保存到本项目。");
     } catch (e) {
       setNotice(`保存 ${editorAlias.email} 的归类与备注失败：${errorText(e)}`);
     } finally {
@@ -2210,14 +2220,25 @@ export default function AccountDetailPage({
       </SidePanel>
       <SidePanel
         open={editorAlias !== null}
-        title="归类与备注"
+        title="编辑别名"
         onClose={() => setEditorAlias(null)}
       >
         <form className="drawer-form" onSubmit={saveAliasMeta}>
           <p className="form-intro">
-            只修改本项目中的整理信息，不会改变 iCloud 别名。
+            名称会同步到 iCloud；分组和备注只保存在本项目中。
           </p>
           <p className="editor-address mono">{editorAlias?.email}</p>
+          <label className="field">
+            <span>别名名称</span>
+            <input
+              value={editorLabel}
+              onChange={(event) => setEditorLabel(event.target.value)}
+              placeholder="例如：注册、账单、客户"
+              maxLength={200}
+              required
+            />
+            <small>这是创建时填写的名称，可以随时修改。</small>
+          </label>
           <SelectMenu
             value={editorGroupId}
             options={[
