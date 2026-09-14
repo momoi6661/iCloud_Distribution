@@ -59,6 +59,18 @@ func loginAndGetCookie(t *testing.T, s *Server, token string) *http.Cookie {
 	return cookies[0]
 }
 
+func loginUserAndGetCookie(t *testing.T, s *Server, username, password string) *http.Cookie {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || len(w.Result().Cookies()) == 0 {
+		t.Fatalf("用户登录失败: %d %s", w.Code, w.Body.String())
+	}
+	return w.Result().Cookies()[0]
+}
+
 func TestUIAuth_Required(t *testing.T) {
 	s := newTestServer(t, "test-token")
 
@@ -97,6 +109,58 @@ func TestUIAuth_Required(t *testing.T) {
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("登录后应返回 200, 实际 %d", w.Code)
+	}
+}
+
+func TestAccountOwnershipIncludesSuperadmin(t *testing.T) {
+	s := newTestServer(t, "test-token")
+	adminCookie := loginAndGetCookie(t, s, "test-token")
+	if _, err := s.ui.Store().Create("member", "password123", false); err != nil {
+		t.Fatal(err)
+	}
+	memberCookie := loginUserAndGetCookie(t, s, "member", "password123")
+
+	create := func(cookie *http.Cookie, name string) string {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/accounts", strings.NewReader(`{"name":"`+name+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		s.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("创建账号失败: %d %s", w.Code, w.Body.String())
+		}
+		var response struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.Data.ID
+	}
+	adminID := create(adminCookie, "admin-account")
+	memberID := create(memberCookie, "member-account")
+
+	assertList := func(cookie *http.Cookie, contains, excludes string) {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/api/accounts", nil)
+		req.AddCookie(cookie)
+		s.Handler().ServeHTTP(w, req)
+		body := w.Body.String()
+		if w.Code != http.StatusOK || !strings.Contains(body, contains) || strings.Contains(body, excludes) {
+			t.Fatalf("账号归属过滤异常: %d %s", w.Code, body)
+		}
+	}
+	assertList(adminCookie, adminID, memberID)
+	assertList(memberCookie, memberID, adminID)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/accounts/"+memberID+"/organizer", nil)
+	req.AddCookie(adminCookie)
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("管理员不应越权访问普通用户账号: %d %s", w.Code, w.Body.String())
 	}
 }
 

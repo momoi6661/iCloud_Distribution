@@ -13,10 +13,6 @@ import (
 func (s *Server) ownershipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identity := currentIdentity(c)
-		if identity.IsSuperadmin() {
-			c.Next()
-			return
-		}
 		accountIDs := []string{}
 		if id := strings.TrimSpace(c.Query("account_id")); id != "" {
 			accountIDs = append(accountIDs, id)

@@ -588,3 +588,23 @@ h1, h2, h3, strong { font-weight: 650; }
   .user-actions .button { flex: 1; }
   .profile-form { padding-inline: 16px; }
 }
+
+/* Keep account actions available on phones. Nonessential metrics collapse,
+   while authorization and detail remain reachable without horizontal scroll. */
+@media (max-width: 720px) {
+  section[aria-labelledby="accounts-title"] .account-table .action-col,
+  section[aria-labelledby="account-matrix-title"] .account-table .action-col {
+    display: table-cell !important;
+    width: 106px;
+    padding-right: 10px;
+  }
+  section[aria-labelledby="accounts-title"] .account-table th:nth-child(3),
+  section[aria-labelledby="accounts-title"] .account-table td:nth-child(3),
+  section[aria-labelledby="account-matrix-title"] .account-table th:nth-child(3),
+  section[aria-labelledby="account-matrix-title"] .account-table td:nth-child(3) { display: none; }
+  .account-table .row-actions { gap: 5px; }
+  .account-table .row-actions .button { width: 100%; min-height: 38px; padding-inline: 8px; }
+  .account-table .row-actions .button:last-child { display: none; }
+  .account-table .account-identity { min-width: 0; }
+  .account-table .account-identity small { font-size: 11px; }
+}

@@ -11,19 +11,11 @@ import (
 
 func (s *Server) listAccounts(c *gin.Context) {
 	identity := currentIdentity(c)
-	if identity.IsSuperadmin() {
-		ok(c, s.mgr.ListAccounts())
-		return
-	}
 	ok(c, s.mgr.ListAccountsFor(identity.ID, false))
 }
 
 func (s *Server) listDisabledAccounts(c *gin.Context) {
 	identity := currentIdentity(c)
-	if identity.IsSuperadmin() {
-		ok(c, s.mgr.ListDisabledAccounts())
-		return
-	}
 	all := s.mgr.ListAccountsFor(identity.ID, true)
 	disabled := make([]*account.Account, 0)
 	for _, item := range all {

@@ -64,10 +64,6 @@ func (s *Server) createShare(c *gin.Context) {
 func (s *Server) listShares(c *gin.Context) {
 	items := s.shares.List(c.Query("account_id"))
 	identity := currentIdentity(c)
-	if identity.IsSuperadmin() {
-		ok(c, items)
-		return
-	}
 	filtered := items[:0]
 	for _, item := range items {
 		if item.OwnerUserID == identity.ID {
@@ -82,7 +78,7 @@ func (s *Server) listShares(c *gin.Context) {
 //	DELETE /api/shares/:token
 func (s *Server) deleteShare(c *gin.Context) {
 	token := c.Param("token")
-	if sh, exists := s.shares.Get(token); !exists || (!currentIdentity(c).IsSuperadmin() && sh.OwnerUserID != currentIdentity(c).ID) {
+	if sh, exists := s.shares.Get(token); !exists || sh.OwnerUserID != currentIdentity(c).ID {
 		fail(c, http.StatusNotFound, "分享不存在")
 		return
 	}
@@ -104,13 +100,11 @@ func (s *Server) batchDeleteShares(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "一次最多删除 500 个分享链接")
 		return
 	}
-	if !currentIdentity(c).IsSuperadmin() {
-		for _, token := range req.Tokens {
-			sh, exists := s.shares.Get(token)
-			if !exists || sh.OwnerUserID != currentIdentity(c).ID {
-				fail(c, http.StatusNotFound, "分享不存在")
-				return
-			}
+	for _, token := range req.Tokens {
+		sh, exists := s.shares.Get(token)
+		if !exists || sh.OwnerUserID != currentIdentity(c).ID {
+			fail(c, http.StatusNotFound, "分享不存在")
+			return
 		}
 	}
 	deleted, notFound, err := s.shares.DeleteMany(req.Tokens)
