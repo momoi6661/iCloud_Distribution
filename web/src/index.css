@@ -512,3 +512,41 @@ h1, h2, h3, strong { font-weight: 650; }
   .share-status { flex: 0 0 auto; align-self: center; }
   .share-row > div:last-child { grid-column: 2; grid-row: 2; justify-self: end; width: auto; }
 }
+
+/* Unified color pass: solid graphite surfaces with a restrained mineral accent. */
+:root {
+  --ink-950: #0b1114;
+  --ink-900: #101a1f;
+  --ink-850: #142127;
+  --ink-800: #1b2d34;
+  --ink-750: #21363d;
+  --text: #eef7f5;
+  --text-2: #b7cbc5;
+  --text-3: #829b93;
+  --text-4: #6f8780;
+  --mint: #76d8b0;
+  --mint-bright: #b5f5d6;
+  --mint-wash: rgba(118, 216, 176, .12);
+  --amber: #e9bb68;
+  --coral: #e58b83;
+  --line: rgba(226, 245, 239, .13);
+  --line-soft: rgba(226, 245, 239, .08);
+}
+[data-theme=light] {
+  --ink-950: #f4f7f6;
+  --ink-900: #e9f0ee;
+  --ink-850: #ffffff;
+  --ink-800: #e4eeea;
+  --ink-750: #dbe8e3;
+  --text: #14211d;
+  --text-2: #3d5149;
+  --text-3: #60756c;
+  --text-4: #71877e;
+  --mint: #126946;
+  --mint-bright: #0b5739;
+  --mint-wash: rgba(18, 105, 70, .10);
+  --amber: #8b5d0d;
+  --coral: #a33f38;
+  --line: rgba(20, 55, 40, .16);
+  --line-soft: rgba(20, 55, 40, .10);
+}

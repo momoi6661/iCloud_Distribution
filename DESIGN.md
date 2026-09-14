@@ -11,7 +11,7 @@ bootstrapped_at: 2026-09-12T11:45:00Z
 
 iCloud Relay is a night-shift operations console for people who manage a fleet of iCloud Hide My Email accounts. The visual direction keeps Linear's quiet, near-black workbench and turns the product's memorable moment into a “signal rail”: every account row exposes its operational signal, alias load, and last validation at a glance. No gradient is permitted anywhere in the product UI.
 
-The tone is precise, calm, and slightly technical. It should feel like a control surface that respects the operator's attention. No marketing hero, no decorative illustration, no decorative dots or ornamental marks, no glassmorphism. Data density is intentional; empty space separates decisions.
+The tone is precise, calm, and slightly technical. It should feel like a control surface that respects the operator's attention. No marketing hero, no decorative illustration, no decorative dots or ornamental marks, no glassmorphism. Data density is intentional; empty space separates decisions. The current palette is a solid graphite and mineral-green system, with amber and coral reserved for status and destructive actions.
 
 ## 2. Color Palette & Roles
 
@@ -19,28 +19,28 @@ The tone is precise, calm, and slightly technical. It should feel like a control
 
 | Token | Value | Use |
 |---|---|---|
-| `ink-950` | `#080b0d` | App canvas and login backdrop |
-| `ink-900` | `#0d1215` | Sidebar, top bar |
-| `ink-850` | `#12191d` | Primary panels |
-| `ink-800` | `#172126` | Hover and selected surfaces |
-| `ink-750` | `#1c292f` | Elevated row and modal surface |
+| `ink-950` | `#0b1114` | App canvas and login backdrop |
+| `ink-900` | `#101a1f` | Sidebar, top bar |
+| `ink-850` | `#142127` | Primary panels |
+| `ink-800` | `#1b2d34` | Hover and selected surfaces |
+| `ink-750` | `#21363d` | Elevated row and modal surface |
 
 ### Text & Content
 
 | Token | Value | Use |
 |---|---|---|
-| `text-primary` | `#ecf5f1` | Headings, primary labels |
-| `text-secondary` | `#b0c0ba` | Supporting copy |
-| `text-tertiary` | `#788c84` | Metadata and captions; AA-safe on panels |
-| `text-faint` | `#788981` | Quiet hints; AA-safe on panels |
+| `text-primary` | `#eef7f5` | Headings, primary labels |
+| `text-secondary` | `#b7cbc5` | Supporting copy |
+| `text-tertiary` | `#829b93` | Metadata and captions; AA-safe on panels |
+| `text-faint` | `#6f8780` | Quiet hints; AA-safe on panels |
 
 ### Brand & Accent
 
 | Token | Value | Use |
 |---|---|---|
-| `relay-mint` | `#7de2b2` | Primary action, healthy signal, focus |
-| `relay-mint-strong` | `#b1f4d0` | Hover text and high-contrast accent |
-| `relay-mint-wash` | `rgba(125, 226, 178, 0.12)` | Selected rows and soft status backgrounds |
+| `relay-mint` | `#76d8b0` | Primary action, healthy signal, focus |
+| `relay-mint-strong` | `#b5f5d6` | Hover text and high-contrast accent |
+| `relay-mint-wash` | `rgba(118, 216, 176, 0.12)` | Selected rows and soft status backgrounds |
 
 ### Theme Modes
 
