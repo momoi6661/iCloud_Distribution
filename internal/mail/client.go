@@ -447,7 +447,8 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 		imap.FetchInternalDate,
 	}
 	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
-	items = append(items, previewSection.FetchItem())
+	rawPreviewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 32768}}
+	items = append(items, previewSection.FetchItem(), rawPreviewSection.FetchItem())
 
 	messages := make(chan *imap.Message, limit)
 	done := make(chan error, 1)
@@ -462,6 +463,13 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 		if previewReader := msg.GetBody(previewSection); previewReader != nil {
 			m.Preview = previewFromRaw(previewReader)
 			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+		}
+		if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
+			rawPreview := previewFromRaw(rawReader)
+			if rawPreview != "" && (m.Preview == "" || strings.Contains(m.Preview, "\uFFFD") || strings.Contains(m.Preview, "=")) {
+				m.Preview = rawPreview
+				m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+			}
 		}
 		// days 过滤
 		if days > 0 {
@@ -683,7 +691,7 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	}
 	part, ok := selectBodyPart(msg.BodyStructure)
 	if !ok {
-		return &FullMessage{Message: toMessage(msg), ContentType: "text/plain"}, nil
+		return c.getFullFromRaw(uid, folder, msg)
 	}
 
 	section := &imap.BodySectionName{Peek: true, BodyPartName: imap.BodyPartName{Path: part.path}}
@@ -695,7 +703,7 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 		return nil, err
 	}
 	if bodyMessage == nil || bodyMessage.GetBody(section) == nil {
-		return nil, fmt.Errorf("邮件正文不存在 (uid=%d)", uid)
+		return c.getFullFromRaw(uid, folder, msg)
 	}
 	body, err := decodeTextBody(bodyMessage.GetBody(section), part.contentType, part.encoding, part.charset)
 	if err != nil {
@@ -707,6 +715,36 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 		}
 	}
 	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
+	full.Folder = folder
+	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
+	return full, nil
+}
+
+// getFullFromRaw 直接解析整封 MIME 邮件，兼容转发邮件中的 message/rfc822
+// 和无法从 BODYSTRUCTURE 定位正文的 iCloud 邮件。
+func (c *Client) getFullFromRaw(uid uint32, folder string, envelope *imap.Message) (*FullMessage, error) {
+	seqset := new(imap.SeqSet)
+	seqset.AddNum(uid)
+	section := &imap.BodySectionName{Peek: true}
+	messages := make(chan *imap.Message, 1)
+	done := make(chan error, 1)
+	go func() { done <- c.cli.UidFetch(seqset, []imap.FetchItem{section.FetchItem()}, messages) }()
+	rawMessage := <-messages
+	if err := <-done; err != nil {
+		return nil, err
+	}
+	if rawMessage == nil || rawMessage.GetBody(section) == nil {
+		return nil, fmt.Errorf("邮件正文不存在 (uid=%d)", uid)
+	}
+	parsed, err := mail.ReadMessage(rawMessage.GetBody(section))
+	if err != nil {
+		return nil, fmt.Errorf("解析邮件正文失败 (uid=%d): %w", uid, err)
+	}
+	body, kind, err := readRenderableBody(parsed)
+	if err != nil {
+		return nil, err
+	}
+	full := &FullMessage{Message: toMessage(envelope), Body: body, ContentType: kind}
 	full.Folder = folder
 	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
 	return full, nil
@@ -743,7 +781,7 @@ type selectedBodyPart struct {
 	charset     string
 }
 
-// selectBodyPart 排除附件，并在整棵 MIME 树中优先选择 text/plain，其次 text/html。
+// selectBodyPart 排除附件，并优先选择 HTML，以保留邮件原始排版；没有 HTML 时退回纯文本。
 func selectBodyPart(bs *imap.BodyStructure) (selectedBodyPart, bool) {
 	var plain, rich *selectedBodyPart
 	bs.Walk(func(path []int, part *imap.BodyStructure) bool {
@@ -770,11 +808,11 @@ func selectBodyPart(bs *imap.BodyStructure) (selectedBodyPart, bool) {
 		}
 		return true
 	})
-	if plain != nil {
-		return *plain, true
-	}
 	if rich != nil {
 		return *rich, true
+	}
+	if plain != nil {
+		return *plain, true
 	}
 	return selectedBodyPart{}, false
 }
@@ -1015,6 +1053,99 @@ func readBody(msg *mail.Message) (string, error) {
 		return htmlFallback, nil
 	}
 	return readTextPart(ct, msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
+}
+
+// readRenderableBody 解析完整 MIME 邮件，优先返回经过清理的 HTML 正文。
+func readRenderableBody(msg *mail.Message) (string, string, error) {
+	ct := msg.Header.Get("Content-Type")
+	mediaType, params, _ := mime.ParseMediaType(ct)
+	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+		mr := multipart.NewReader(msg.Body, params["boundary"])
+		var plain string
+		for {
+			part, err := mr.NextPart()
+			if err != nil {
+				break
+			}
+			body, kind, ok := readRenderablePart(part)
+			if !ok {
+				continue
+			}
+			if kind == "text/html" {
+				return body, kind, nil
+			}
+			if plain == "" {
+				plain = body
+			}
+		}
+		return plain, "text/plain", nil
+	}
+	if strings.EqualFold(mediaType, "text/html") {
+		raw, err := decodeRawTextBody(msg.Body, msg.Header.Get("Content-Transfer-Encoding"), params["charset"])
+		if err != nil {
+			return "", "", err
+		}
+		return sanitizeHTML(raw), "text/html", nil
+	}
+	body, err := readTextPart(ct, msg.Header.Get("Content-Transfer-Encoding"), msg.Body)
+	return body, "text/plain", err
+}
+
+func readRenderablePart(part *multipart.Part) (string, string, bool) {
+	if strings.EqualFold(strings.TrimSpace(strings.Split(part.Header.Get("Content-Disposition"), ";")[0]), "attachment") {
+		return "", "", false
+	}
+	ct := part.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "text/plain"
+	}
+	mediaType, params, _ := mime.ParseMediaType(ct)
+	if strings.EqualFold(mediaType, "message/rfc822") {
+		raw, err := io.ReadAll(io.LimitReader(part, 2<<20))
+		if err != nil {
+			return "", "", false
+		}
+		nested, err := mail.ReadMessage(bytes.NewReader(raw))
+		if err != nil {
+			return "", "", false
+		}
+		body, kind, err := readRenderableBody(nested)
+		return body, kind, err == nil && strings.TrimSpace(body) != ""
+	}
+	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+		mr := multipart.NewReader(part, params["boundary"])
+		var plain string
+		for {
+			sub, err := mr.NextPart()
+			if err != nil {
+				break
+			}
+			body, kind, ok := readRenderablePart(sub)
+			if !ok {
+				continue
+			}
+			if kind == "text/html" {
+				return body, kind, true
+			}
+			if plain == "" {
+				plain = body
+			}
+		}
+		return plain, "text/plain", plain != ""
+	}
+	if strings.EqualFold(mediaType, "text/html") {
+		raw, err := decodeRawTextBody(part, part.Header.Get("Content-Transfer-Encoding"), params["charset"])
+		if err != nil {
+			return "", "", false
+		}
+		body := sanitizeHTML(raw)
+		return body, "text/html", strings.TrimSpace(body) != ""
+	}
+	if strings.EqualFold(mediaType, "text/plain") {
+		body, err := readTextPart(ct, part.Header.Get("Content-Transfer-Encoding"), part)
+		return body, "text/plain", err == nil && strings.TrimSpace(body) != ""
+	}
+	return "", "", false
 }
 
 // multipartBoundary 从 Content-Type 提取 boundary。

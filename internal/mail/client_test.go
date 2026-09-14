@@ -130,6 +130,25 @@ func TestPreviewFromRawReadsNestedForwardedMessage(t *testing.T) {
 	}
 }
 
+func TestReadRenderableBodyPrefersNestedHTML(t *testing.T) {
+	raw := "Content-Type: multipart/mixed; boundary=outer\r\n\r\n" +
+		"--outer\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nfallback\r\n" +
+		"--outer\r\nContent-Type: message/rfc822\r\n\r\n" +
+		"From: sender@example.com\r\nSubject: code\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n" +
+		"<html><body><strong>=E9=AA=8C=E8=AF=81=E7=A0=81=EF=BC=9A539808</strong></body></html>\r\n--outer--\r\n"
+	message, err := mail.ReadMessage(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, kind, err := readRenderableBody(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "text/html" || !strings.Contains(body, "验证码：539808") || !strings.Contains(body, "<strong>") {
+		t.Fatalf("unexpected rendered body kind=%q body=%q", kind, body)
+	}
+}
+
 func TestStripForwardedHeaderPreamble(t *testing.T) {
 	got := stripForwardedHeaderPreamble("Return-path: sender@example.com\nOriginal-Recipient: target@icloud.com\n\n你的验证码是 482913")
 	if got != "你的验证码是 482913" {
@@ -137,7 +156,7 @@ func TestStripForwardedHeaderPreamble(t *testing.T) {
 	}
 }
 
-func TestSelectBodyPartPrefersPlainAndSkipsAttachment(t *testing.T) {
+func TestSelectBodyPartPrefersHTMLAndSkipsAttachment(t *testing.T) {
 	structure := &imap.BodyStructure{
 		MIMEType: "multipart",
 		Parts: []*imap.BodyStructure{
@@ -147,7 +166,7 @@ func TestSelectBodyPartPrefersPlainAndSkipsAttachment(t *testing.T) {
 		},
 	}
 	part, ok := selectBodyPart(structure)
-	if !ok || len(part.path) != 1 || part.path[0] != 3 || part.contentType != "text/plain" || part.encoding != "base64" || part.charset != "gb18030" {
+	if !ok || len(part.path) != 1 || part.path[0] != 1 || part.contentType != "text/html" || part.charset != "utf-8" {
 		t.Fatalf("unexpected selection: %#v, ok=%v", part, ok)
 	}
 }

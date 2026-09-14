@@ -150,7 +150,6 @@ func (s *Server) listInbox(c *gin.Context) {
 	}
 	messages = messages[start:end]
 	for i := range messages {
-		messages[i].Preview = mail.NormalizePreviewText(messages[i].Preview)
 		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
 		if messages[i].Preview == "" && messages[i].Code != "" {
 			messages[i].Preview = "已识别验证码：" + messages[i].Code
