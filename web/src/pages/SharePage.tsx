@@ -29,8 +29,9 @@ function MailBody({ text, html = false }: { text: string; html?: boolean }) {
 
 function InlinePublicMailRow({ item, selected, loading, error, method, onOpen, onClose, onRetry, onCopyCode }: { item: MailMessage; selected: FullMailMessage | null; loading: boolean; error: string; method: MailReadMethod; onOpen: () => void; onClose: () => void; onRetry: () => void; onCopyCode: (code: string) => void }) {
   const expanded = selected?.id === item.id && (!selected.folder || selected.folder === item.folder)
+  const toggleExpanded = () => { if (expanded) onClose(); else onOpen() }
   return <div className={`mail-item ${expanded ? 'expanded' : ''}`}>
-    <div className={`mail-row mail-row-button public-mail-row ${expanded ? 'selected' : ''}`} onClick={onOpen} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }} role="button" tabIndex={0} aria-expanded={expanded}>
+    <div className={`mail-row mail-row-button public-mail-row ${expanded ? 'selected' : ''}`} onClick={toggleExpanded} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleExpanded() } }} role="button" tabIndex={0} aria-expanded={expanded}>
       <div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div>
       <div>
         <strong>{item.subject || '（无主题）'}</strong>

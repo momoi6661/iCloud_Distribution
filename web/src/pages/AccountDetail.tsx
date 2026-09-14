@@ -273,15 +273,19 @@ function InlineMailRow({
   onToggle: () => void;
 }) {
   const expanded = selected?.id === item.id && selected.folder === item.folder;
+  const toggleExpanded = () => {
+    if (expanded) onClose();
+    else onOpen();
+  };
   return (
     <div className={`mail-item ${expanded ? "expanded" : ""}`}>
       <div
         className={`mail-row mail-row-button ${expanded ? "selected" : ""} ${method !== "web_api" ? "has-selection" : ""}`}
-        onClick={onOpen}
+        onClick={toggleExpanded}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            onOpen();
+            toggleExpanded();
           }
         }}
         role="button"
