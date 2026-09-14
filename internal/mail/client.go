@@ -440,12 +440,14 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(from, mbox.Messages)
 
-	// 列表阶段只取标题、发件人、收件人和时间。正文仅在用户点击邮件后读取。
+	// 列表阶段批量取标题、发件人、时间和正文开头摘要。完整正文仍在点击后读取。
 	items := []imap.FetchItem{
 		imap.FetchUid,
 		imap.FetchEnvelope,
 		imap.FetchInternalDate,
 	}
+	previewSection := &imap.BodySectionName{Peek: true, Partial: []int{0, 8192}, BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}}
+	items = append(items, previewSection.FetchItem())
 
 	messages := make(chan *imap.Message, limit)
 	done := make(chan error, 1)
@@ -457,6 +459,10 @@ func (c *Client) ListFolder(folder string, limit int, days int) ([]Message, erro
 	for msg := range messages {
 		m := toMessage(msg)
 		m.Folder = folder
+		if previewReader := msg.GetBody(previewSection); previewReader != nil {
+			m.Preview = previewFromRaw(previewReader)
+			m.Code = ExtractVerificationCode(m.Subject + "\n" + m.Preview)
+		}
 		// days 过滤
 		if days > 0 {
 			if t, err := time.Parse(time.RFC1123Z, m.Date); err == nil {
