@@ -1136,13 +1136,22 @@ func decodePreviewBody(r io.Reader, contentType, encoding, bodyCharset string) (
 	return text, nil
 }
 
-// sanitizeHTML 保留邮件常用排版标签，移除脚本、样式、事件属性和危险链接。
+var unsafeCSSPattern = regexp.MustCompile(`(?is)@import|url\s*\(|expression\s*\(|javascript\s*:|behavior\s*:|-moz-binding|<|>`)
+
+func sanitizeCSS(source string) string {
+	if unsafeCSSPattern.MatchString(source) {
+		return ""
+	}
+	return source
+}
+
+// sanitizeHTML 保留邮件常用排版与安全 CSS，移除主动内容和追踪资源。
 func sanitizeHTML(source string) string {
 	doc, err := xhtml.Parse(strings.NewReader(source))
 	if err != nil {
 		return ""
 	}
-	allowed := map[string]bool{"html": true, "body": true, "p": true, "div": true, "br": true, "strong": true, "b": true, "em": true, "i": true, "u": true, "blockquote": true, "ul": true, "ol": true, "li": true, "h1": true, "h2": true, "h3": true, "h4": true, "pre": true, "code": true, "a": true, "table": true, "thead": true, "tbody": true, "tr": true, "th": true, "td": true, "span": true}
+	allowed := map[string]bool{"html": true, "body": true, "style": true, "p": true, "div": true, "section": true, "header": true, "footer": true, "main": true, "center": true, "br": true, "hr": true, "strong": true, "b": true, "em": true, "i": true, "u": true, "small": true, "sub": true, "sup": true, "blockquote": true, "ul": true, "ol": true, "li": true, "h1": true, "h2": true, "h3": true, "h4": true, "pre": true, "code": true, "a": true, "table": true, "thead": true, "tbody": true, "tfoot": true, "tr": true, "th": true, "td": true, "span": true}
 	var render func(*xhtml.Node, *strings.Builder)
 	render = func(node *xhtml.Node, out *strings.Builder) {
 		switch node.Type {
@@ -1150,7 +1159,21 @@ func sanitizeHTML(source string) string {
 			out.WriteString(stdhtml.EscapeString(node.Data))
 		case xhtml.ElementNode:
 			name := strings.ToLower(node.Data)
-			if name == "script" || name == "style" || name == "iframe" || name == "object" || name == "embed" || name == "form" || name == "input" || name == "meta" || name == "link" {
+			if name == "script" || name == "iframe" || name == "object" || name == "embed" || name == "form" || name == "input" || name == "button" || name == "meta" || name == "link" || name == "video" || name == "audio" || name == "svg" || name == "math" {
+				return
+			}
+			if name == "style" {
+				var css strings.Builder
+				for child := node.FirstChild; child != nil; child = child.NextSibling {
+					if child.Type == xhtml.TextNode {
+						css.WriteString(child.Data)
+					}
+				}
+				if safe := sanitizeCSS(css.String()); safe != "" {
+					out.WriteString("<style>")
+					out.WriteString(safe)
+					out.WriteString("</style>")
+				}
 				return
 			}
 			if !allowed[name] || name == "html" || name == "body" {
@@ -1164,17 +1187,25 @@ func sanitizeHTML(source string) string {
 			for _, attr := range node.Attr {
 				key := strings.ToLower(attr.Key)
 				value := strings.TrimSpace(attr.Val)
-				if (name == "a" && key == "href") || (name == "img" && key == "src") {
+				if name == "a" && key == "href" {
 					lower := strings.ToLower(value)
-					if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+					if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "mailto:") {
 						out.WriteByte(' ')
 						out.WriteString(key)
 						out.WriteString("=\"")
 						out.WriteString(stdhtml.EscapeString(value))
 						out.WriteString("\"")
 					}
-				} else if name == "img" && key == "alt" {
-					out.WriteString(" alt=\"")
+				} else if key == "style" {
+					if safe := sanitizeCSS(value); safe != "" {
+						out.WriteString(" style=\"")
+						out.WriteString(stdhtml.EscapeString(safe))
+						out.WriteString("\"")
+					}
+				} else if key == "class" || key == "id" || key == "title" || key == "role" || key == "align" || key == "valign" || key == "width" || key == "height" || key == "bgcolor" || key == "colspan" || key == "rowspan" || key == "cellpadding" || key == "cellspacing" {
+					out.WriteByte(' ')
+					out.WriteString(key)
+					out.WriteString("=\"")
 					out.WriteString(stdhtml.EscapeString(value))
 					out.WriteString("\"")
 				}

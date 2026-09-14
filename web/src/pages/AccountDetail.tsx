@@ -14,6 +14,7 @@ import {
 } from "../api/client";
 import GroupFilter from "../components/GroupFilter";
 import Icon from "../components/Icon";
+import MailHTMLFrame from "../components/MailHTMLFrame";
 import PageLayout from "../components/PageLayout";
 import Pagination from "../components/Pagination";
 import SelectMenu from "../components/SelectMenu";
@@ -49,7 +50,7 @@ const copyCode = async (code: string, setNotice: (value: string) => void) => {
 const urlPattern = /(https?:\/\/[^\s<]+)/g;
 function MailBody({ text, html = false }: { text: string; html?: boolean }) {
   if (html && text.trim()) {
-    return <div className="mail-body-html" dangerouslySetInnerHTML={{ __html: text }} />;
+    return <MailHTMLFrame html={text} />;
   }
   const paragraphs = text.replace(/\r\n?/g, "\n").split(/\n{2,}/);
   return (
@@ -838,24 +839,30 @@ export default function AccountDetailPage({
     setSelectedActive(
       allActiveSelected ? [] : activeAliases.map((item) => item.anonymousId),
     );
-  const deleteSelectedActive = async () => {
+  const disableSelectedActive = async () => {
     if (!selectedActive.length) return;
     setBusy(true);
     try {
-      const result = await api.batchDeleteAliases(id, selectedActive);
-      const deleted = new Set(
-        result.results.filter((item) => item.success).map((item) => item.id),
+      const targets = [...selectedActive];
+      const results = await Promise.allSettled(
+        targets.map((aliasId) => api.deactivateAlias(id, aliasId)),
+      );
+      const disabled = new Set(
+        targets.filter((_, index) => results[index].status === "fulfilled"),
       );
       setAliases((current) =>
-        current.filter((item) => !deleted.has(item.anonymousId)),
+        current.map((item) =>
+          disabled.has(item.anonymousId) ? { ...item, active: false } : item,
+        ),
       );
-      setSelectedActive([]);
+      setSelectedActive((current) => current.filter((item) => !disabled.has(item)));
       setActiveDeleteConfirm(false);
+      const failed = targets.length - disabled.size;
       setNotice(
-        `已删除 ${result.deleted} 个邮箱${result.failed ? `，${result.failed} 个失败` : ""}。`,
+        `已停用 ${disabled.size} 个邮箱${failed ? `，${failed} 个失败` : ""}，可在停用邮箱中恢复。`,
       );
     } catch (e) {
-      setNotice(`批量删除邮箱失败：${errorText(e)}`);
+      setNotice(`批量停用邮箱失败：${errorText(e)}`);
     } finally {
       setBusy(false);
     }
@@ -1537,8 +1544,8 @@ export default function AccountDetailPage({
                 <span>{selectedActive.length ? `已选 ${selectedActive.length} 个` : "选择邮箱"}</span>
                 {selectedActive.length > 0 && (
                   <>
-                    <button className="danger-ghost" onClick={() => setActiveDeleteConfirm(true)}>
-                      <Icon name="trash" size={15} />批量删除
+                    <button className="button secondary" onClick={() => setActiveDeleteConfirm(true)}>
+                      <Icon name="archive" size={15} />批量停用
                     </button>
                     <button className="text-button" onClick={() => setSelectedActive([])}>清除选择</button>
                   </>
@@ -2232,20 +2239,20 @@ export default function AccountDetailPage({
       </Dialog>
       <Dialog
         open={activeDeleteConfirm}
-        title="删除所选邮箱？"
+        title="停用所选邮箱？"
         onClose={() => setActiveDeleteConfirm(false)}
       >
         <div className="dialog-body">
-          <div className="dialog-warning destructive">
-            <Icon name="trash" size={20} />
+          <div className="dialog-warning">
+            <Icon name="archive" size={20} />
             <div>
-              <strong>此操作无法撤销。</strong>
-              <p>将永久删除所选的 {selectedActive.length} 个隐藏邮箱。</p>
+              <strong>所选邮箱会移入停用邮箱区。</strong>
+              <p>将停用 {selectedActive.length} 个隐藏邮箱，之后仍可恢复。</p>
             </div>
           </div>
           <div className="dialog-actions">
             <button className="button secondary" onClick={() => setActiveDeleteConfirm(false)}>取消</button>
-            <button className="button danger" disabled={busy} onClick={deleteSelectedActive}>{busy ? "删除中…" : "确认删除"}</button>
+            <button className="button primary" disabled={busy} onClick={disableSelectedActive}>{busy ? "停用中…" : "确认停用"}</button>
           </div>
         </div>
       </Dialog>

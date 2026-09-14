@@ -426,7 +426,7 @@ h1, h2, h3, strong { font-weight: 650; }
 .share-toolbar { display: flex; align-items: center; gap: 8px; padding: 0 22px 14px; border-bottom: 1px solid var(--line-soft); }
 .share-search { flex: 1; width: auto; max-width: 520px; }
 .share-filter-menu { flex: 0 0 170px; }
-.share-batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 22px 0; padding: 4px 8px; color: var(--text-2); background: var(--ink-800); border: 1px solid var(--line); border-radius: 6px; animation: reveal .18s var(--ease) both; }
+.share-batch-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 22px 18px; padding: 4px 8px; color: var(--text-2); background: var(--ink-800); border: 1px solid var(--line); border-radius: 6px; animation: reveal .18s var(--ease) both; }
 .share-batch-toolbar > span { margin-right: auto; font-size: 12px; }
 .share-select { flex: 0 0 44px; margin: -10px -4px -10px -10px; }
 .share-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; grid-template-rows: auto auto; column-gap: 12px; min-height: 76px; padding: 10px 0; }
@@ -448,9 +448,15 @@ h1, h2, h3, strong { font-weight: 650; }
 
 /* Final responsive corrections: readable mail details and purposeful code action. */
 .alias-main > .mono { font-size: 16px; line-height: 1.45; font-weight: 700; overflow-wrap: anywhere; }
-.mail-code-button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; margin-top: 7px; padding: 0 11px; color: var(--mint); background: var(--mint-wash); border: 1px solid rgba(125,226,178,.28); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+.mail-row .mail-code-button,
+.public-mail-row .mail-code-button { display: inline-flex; width: fit-content; max-width: 100%; align-items: center; gap: 9px; min-height: 40px; margin-top: 8px; padding: 0 12px; overflow: visible; color: var(--mint); background: var(--mint-wash); border: 1px solid rgba(125,226,178,.28); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 17px; font-weight: 700; line-height: 1; letter-spacing: .03em; white-space: nowrap; }
+.mail-row .mail-code-button > span,
+.public-mail-row .mail-code-button > span { display: inline; margin: 0; overflow: visible; color: inherit; font: inherit; line-height: inherit; letter-spacing: inherit; text-overflow: clip; white-space: nowrap; }
+.mail-code-button svg { flex: 0 0 auto; }
 .mail-code-button:hover { color: var(--mint-bright); background: var(--ink-800); border-color: var(--mint); }
+.mail-code-button:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
 .mail-code-button:active { transform: translateY(1px); }
+.mail-html-frame { display: block; width: 100%; min-height: 180px; border: 0; background: #fff; }
 .inline-mail-body a { color: var(--mint); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; word-break: break-word; }
 .danger-outline { color: var(--coral); border-color: rgba(236,141,134,.28); background: transparent; }
 .danger-outline:hover { color: var(--coral); background: #ec8d8614; }
@@ -468,7 +474,7 @@ h1, h2, h3, strong { font-weight: 650; }
   .alias-row .alias-main { min-width: 0; }
   .alias-row .alias-actions, .alias-row > .status { grid-column: 3; }
   .alias-row .alias-actions { justify-content: flex-start; }
-  .mail-code-button { max-width: 100%; font-size: 16px; }
+  .mail-row .mail-code-button, .public-mail-row .mail-code-button { min-height: 44px; font-size: 17px; }
   .public-header-actions { flex-wrap: wrap; justify-content: flex-end; }
   .public-theme-toggle { min-height: 44px; }
 }
@@ -502,7 +508,7 @@ h1, h2, h3, strong { font-weight: 650; }
   .detail-state .button { width: 100%; }
   .share-toolbar { align-items: stretch; flex-direction: column; padding-inline: 16px; }
   .share-search, .share-filter-menu { width: 100%; max-width: none; flex-basis: auto; }
-  .share-batch-toolbar { margin-inline: 16px; }
+  .share-batch-toolbar { margin: 12px 16px 16px; }
   .share-row { grid-template-columns: 44px minmax(0, 1fr); grid-template-rows: auto auto; }
   .share-select { grid-column: 1; grid-row: 1; margin-left: -8px; }
   .share-row-main { display: block; grid-column: 2; grid-row: 1; }

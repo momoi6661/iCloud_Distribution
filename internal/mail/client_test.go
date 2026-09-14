@@ -177,11 +177,11 @@ func TestParseForwardedSummaryUsesHeadersWithoutReadingBody(t *testing.T) {
 }
 
 func TestSanitizeHTMLKeepsMailLayoutAndBlocksActiveContent(t *testing.T) {
-	got := sanitizeHTML(`<div><h2>验证码</h2><p>代码 <strong>482913</strong></p><a href="javascript:alert(1)">危险链接</a><a href="https://example.com">安全链接</a><script>steal()</script><img src="https://tracker.example/pixel" /></div>`)
-	if strings.Contains(got, "script") || strings.Contains(got, "steal") || strings.Contains(got, "tracker.example") || strings.Contains(got, "javascript:") {
+	got := sanitizeHTML(`<style>.mail{color:#17211c}.button{display:inline-block}</style><style>@import url(https://tracker.example/style.css)</style><div class="mail" style="padding: 16px"><h2>验证码</h2><p>代码 <strong>482913</strong></p><a class="button" href="javascript:alert(1)">危险链接</a><a href="https://example.com">安全链接</a><script>steal()</script><img src="https://tracker.example/pixel" /></div>`)
+	if strings.Contains(got, "script") || strings.Contains(got, "steal") || strings.Contains(got, "tracker.example") || strings.Contains(got, "javascript:") || strings.Contains(got, "@import") {
 		t.Fatalf("active content was not removed: %s", got)
 	}
-	for _, want := range []string{"<h2>验证码</h2>", "<strong>482913</strong>", `href="https://example.com"`, `rel="noopener noreferrer nofollow"`} {
+	for _, want := range []string{"<style>.mail{color:#17211c}.button{display:inline-block}</style>", `class="mail"`, `style="padding: 16px"`, "<h2>验证码</h2>", "<strong>482913</strong>", `href="https://example.com"`, `rel="noopener noreferrer nofollow"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("sanitized mail lost %q: %s", want, got)
 		}
