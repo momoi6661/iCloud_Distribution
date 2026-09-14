@@ -631,13 +631,13 @@ export default function AccountDetailPage({
     return [...groups.entries()];
   }, [filteredShares]);
   const allDisabledSelected =
-    disabledAliases.length > 0 &&
-    disabledAliases.every((item) =>
+    pagedAliases.length > 0 &&
+    pagedAliases.every((item) =>
       selectedDisabled.includes(item.anonymousId),
     );
   const allActiveSelected =
-    activeAliases.length > 0 &&
-    activeAliases.every((item) => selectedActive.includes(item.anonymousId));
+    pagedAliases.length > 0 &&
+    pagedAliases.every((item) => selectedActive.includes(item.anonymousId));
   useEffect(() => {
     setSelectedActive((current) =>
       current.filter((selectedId) =>
@@ -903,7 +903,9 @@ export default function AccountDetailPage({
     );
   const toggleAllActive = () =>
     setSelectedActive(
-      allActiveSelected ? [] : activeAliases.map((item) => item.anonymousId),
+      allActiveSelected
+        ? selectedActive.filter((selectedId) => !pagedAliases.some((item) => item.anonymousId === selectedId))
+        : [...new Set([...selectedActive, ...pagedAliases.map((item) => item.anonymousId)])],
     );
   const disableSelectedActive = async () => {
     if (!selectedActive.length) return;
@@ -936,8 +938,8 @@ export default function AccountDetailPage({
   const toggleAllDisabled = () =>
     setSelectedDisabled(
       allDisabledSelected
-        ? []
-        : disabledAliases.map((item) => item.anonymousId),
+        ? selectedDisabled.filter((selectedId) => !pagedAliases.some((item) => item.anonymousId === selectedId))
+        : [...new Set([...selectedDisabled, ...pagedAliases.map((item) => item.anonymousId)])],
     );
   const restoreDisabled = async (item: Alias) => {
     setBusy(true);
@@ -1569,7 +1571,7 @@ export default function AccountDetailPage({
                 <span>
                   {selectedDisabled.length
                     ? `已选 ${selectedDisabled.length} 个`
-                    : "选择停用别名"}
+                    : "选择当前页"}
                 </span>
                 {selectedDisabled.length > 0 && (
                   <>
@@ -1607,7 +1609,7 @@ export default function AccountDetailPage({
                     onChange={toggleAllActive}
                   />
                 </label>
-                <span>{selectedActive.length ? `已选 ${selectedActive.length} 个` : "选择邮箱"}</span>
+                <span>{selectedActive.length ? `已选 ${selectedActive.length} 个` : "选择当前页"}</span>
                 {selectedActive.length > 0 && (
                   <>
                     <button className="button secondary" onClick={() => setActiveDeleteConfirm(true)}>
