@@ -221,7 +221,12 @@ func (s *Server) publicShareMessage(c *gin.Context) {
 	}
 	defer unlock.Unlock()
 
-	full, err := mc.GetFull(uint32(uid64), c.Query("folder"))
+	var full *mail.FullMessage
+	if c.Query("source") == "forward_imap" {
+		full, err = mc.GetForwardedFull(uint32(uid64), c.Query("folder"), sh.Alias)
+	} else {
+		full, err = mc.GetFull(uint32(uid64), c.Query("folder"))
+	}
 	if err != nil {
 		fail(c, http.StatusBadGateway, "读取邮件正文失败: "+err.Error())
 		return

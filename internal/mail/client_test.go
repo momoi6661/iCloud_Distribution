@@ -232,6 +232,17 @@ func TestForwardedAliasExactMatchInNestedMessage(t *testing.T) {
 	}
 }
 
+func TestMatchingExactEmailUsesOwnedAliasSet(t *testing.T) {
+	text := "To: real-user@qq.com\r\nX-Original-To: second.alias@icloud.com"
+	got := matchingExactEmail(text, []string{"first.alias@icloud.com", "second.alias@icloud.com"})
+	if got != "second.alias@icloud.com" {
+		t.Fatalf("matched alias = %q", got)
+	}
+	if got := matchingExactEmail(text, []string{"alias@icloud.com"}); got != "" {
+		t.Fatalf("similar unowned alias matched: %q", got)
+	}
+}
+
 func TestSanitizeHTMLKeepsMailLayoutAndBlocksActiveContent(t *testing.T) {
 	got := sanitizeHTML(`<style>.mail{color:#17211c}.button{display:inline-block}</style><style>@import url(https://tracker.example/style.css)</style><div class="mail" style="padding: 16px"><h2>验证码</h2><p>代码 <strong>482913</strong></p><a class="button" href="javascript:alert(1)">危险链接</a><a href="https://example.com">安全链接</a><script>steal()</script><img src="https://tracker.example/pixel" /></div>`)
 	if strings.Contains(got, "script") || strings.Contains(got, "steal") || strings.Contains(got, "tracker.example") || strings.Contains(got, "javascript:") || strings.Contains(got, "@import") {

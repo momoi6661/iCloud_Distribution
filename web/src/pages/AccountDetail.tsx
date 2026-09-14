@@ -778,6 +778,7 @@ export default function AccountDetailPage({
         item.id,
         item.folder,
         inbox.method,
+        item.alias || alias,
       );
       if (request === messageRequest.current) setMessage(result);
     } catch (e) {
@@ -804,7 +805,7 @@ export default function AccountDetailPage({
     setMessageDeleteConfirm(false);
     setNotice("正在从邮箱服务器删除邮件…");
     try {
-      await api.deleteMessage(id, target.id, target.folder, inbox.method);
+      await api.deleteMessage(id, target.id, target.folder, inbox.method, target.alias || alias);
       setNotice("邮件已删除。");
     } catch (e) {
       setInbox((current) => current ? { ...current, messages: newestFirst([...current.messages.filter((item) => mailKey(item) !== targetKey), target]) } : current);
@@ -836,7 +837,7 @@ export default function AccountDetailPage({
     try {
       const results = await Promise.allSettled(
         targets.map((item) =>
-          api.deleteMessage(id, item.id, item.folder, inbox.method),
+          api.deleteMessage(id, item.id, item.folder, inbox.method, item.alias || alias),
         ),
       );
       const deleted = new Set(
@@ -1489,7 +1490,7 @@ export default function AccountDetailPage({
           </button>
           <button
             className={tab === "inbox" ? "active" : ""}
-            onClick={() => openInbox(alias)}
+            onClick={() => openInbox("")}
             role="tab"
             aria-selected={tab === "inbox"}
           >

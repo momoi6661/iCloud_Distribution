@@ -71,6 +71,7 @@ export interface MailMessage {
   preview: string
   code?: string
   folder?: string
+  alias?: string
 }
 
 export type MailReadMethod = 'imap' | 'web_api' | 'forward_imap'
@@ -231,7 +232,7 @@ export const api = {
 
   inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto', page = 1) => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&page=${page}&method=${encodeURIComponent(method)}`),
   inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
-  getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
-  deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
+  getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method'], alias = '') => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}&alias=${encodeURIComponent(alias)}`),
+  deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method'], alias = '') => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}&alias=${encodeURIComponent(alias)}`),
 	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
 }

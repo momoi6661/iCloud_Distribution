@@ -40,6 +40,7 @@ type Message struct {
 	Preview string `json:"preview"`
 	Code    string `json:"code,omitempty"`
 	Folder  string `json:"folder,omitempty"` // 所在文件夹 (IMAP uid 按文件夹生效,读取正文时需要)
+	Alias   string `json:"alias,omitempty"`  // 转发邮箱模式下精确匹配到的隐藏邮箱
 }
 
 // SortMessagesNewest puts the most recent mail first. Different providers do
@@ -156,6 +157,70 @@ func (c *Client) ListForwardedByAlias(alias string, folders []string, limit, day
 	return out, nil
 }
 
+// ListForwardedByAliases lists only messages whose raw headers/body contain
+// one of the exact hidden iCloud addresses. It is used for the combined inbox
+// of a QQ/Gmail forwarding mailbox and never returns the mailbox's other mail.
+func (c *Client) ListForwardedByAliases(aliases, folders []string, limit, days int) ([]Message, error) {
+	if c.cli == nil {
+		return nil, fmt.Errorf("未连接")
+	}
+	targets := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		alias = strings.ToLower(strings.TrimSpace(alias))
+		if alias != "" {
+			targets = append(targets, alias)
+		}
+	}
+	if len(targets) == 0 {
+		return []Message{}, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if len(folders) == 0 {
+		folders = []string{"INBOX"}
+	}
+	var out []Message
+	var lastErr error
+	for _, folder := range folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			continue
+		}
+		if _, err := c.cli.Select(folder, true); err != nil {
+			lastErr = err
+			continue
+		}
+		criteria := imap.NewSearchCriteria()
+		criteria.Text = []string{"icloud.com"}
+		if days > 0 {
+			criteria.Since = time.Now().AddDate(0, 0, -days)
+		}
+		uids, err := c.cli.UidSearch(criteria)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		messages, err := c.fetchForwardedMessagesByAliases(uids, folder, targets)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		out = append(out, messages...)
+	}
+	SortMessagesNewest(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
+}
+
 func (c *Client) searchForwardedUIDs(target string, days int) ([]uint32, error) {
 	criteria := imap.NewSearchCriteria()
 	if target != "" {
@@ -215,6 +280,10 @@ func (c *Client) CountForwardedByAlias(alias string, folders []string, days int)
 }
 
 func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([]Message, error) {
+	return c.fetchForwardedMessagesByAliases(uids, folder, []string{target})
+}
+
+func (c *Client) fetchForwardedMessagesByAliases(uids []uint32, folder string, targets []string) ([]Message, error) {
 	if len(uids) == 0 {
 		return []Message{}, nil
 	}
@@ -248,18 +317,20 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 		if err != nil {
 			continue
 		}
-		summary, matches, err := parseForwardedSummary(msg, raw, folder, target)
+		matchedAlias := matchingExactEmail(string(raw), targets)
+		summary, _, err := parseForwardedSummary(msg, raw, folder, matchedAlias)
 		var rawPreview []byte
 		if previewReader := msg.GetBody(rawPreviewSection); previewReader != nil {
 			rawPreview, _ = io.ReadAll(previewReader)
 			// Forwarding providers may retain the hidden address only inside a
 			// nested message/rfc822. Keep exact-address matching so unrelated
 			// messages in the real mailbox never leak into this alias view.
-			if !matches && containsExactEmail(string(rawPreview), target) {
-				matches = true
+			if matchedAlias == "" {
+				matchedAlias = matchingExactEmail(string(rawPreview), targets)
 			}
 		}
-		if err == nil && matches {
+		if err == nil && matchedAlias != "" {
+			summary.Alias = matchedAlias
 			if previewReader := msg.GetBody(previewSection); previewReader != nil {
 				summary.Preview = previewFromRaw(previewReader)
 				summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
@@ -360,6 +431,23 @@ func containsExactEmail(value, target string) bool {
 		}
 	}
 	return false
+}
+
+func matchingExactEmail(value string, targets []string) string {
+	allowed := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		target = strings.ToLower(strings.TrimSpace(target))
+		if target != "" {
+			allowed[target] = struct{}{}
+		}
+	}
+	for _, candidate := range forwardedEmailPattern.FindAllString(value, -1) {
+		candidate = strings.ToLower(candidate)
+		if _, ok := allowed[candidate]; ok {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // Disconnect 登出并关闭连接。
@@ -736,6 +824,66 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	full.Folder = folder
 	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
 	return full, nil
+}
+
+// GetForwardedFull reads a message from a real forwarding mailbox only when
+// the raw message contains the exact hidden iCloud recipient. This repeats the
+// alias boundary at detail-read time instead of trusting a UID from the UI.
+func (c *Client) GetForwardedFull(uid uint32, folder, alias string) (*FullMessage, error) {
+	if c.cli == nil {
+		return nil, fmt.Errorf("未连接")
+	}
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return nil, fmt.Errorf("转发邮箱正文读取需要指定隐藏邮箱地址")
+	}
+	if folder == "" {
+		folder = "INBOX"
+	}
+	if _, err := c.cli.Select(folder, true); err != nil {
+		return nil, err
+	}
+	seqset := new(imap.SeqSet)
+	seqset.AddNum(uid)
+	section := &imap.BodySectionName{Peek: true}
+	messages := make(chan *imap.Message, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.cli.UidFetch(seqset, []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, section.FetchItem()}, messages)
+	}()
+	message := <-messages
+	if err := <-done; err != nil {
+		return nil, err
+	}
+	if message == nil || message.GetBody(section) == nil {
+		return nil, fmt.Errorf("邮件不存在 (uid=%d)", uid)
+	}
+	raw, err := io.ReadAll(message.GetBody(section))
+	if err != nil {
+		return nil, err
+	}
+	if !containsExactEmail(string(raw), alias) {
+		return nil, fmt.Errorf("这封邮件不属于当前 iCloud 隐藏邮箱")
+	}
+	parsed, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("解析邮件正文失败 (uid=%d): %w", uid, err)
+	}
+	body, kind, err := readRenderableBody(parsed)
+	if err != nil {
+		return nil, err
+	}
+	full := &FullMessage{Message: toMessage(message), Body: body, ContentType: kind}
+	full.Folder = folder
+	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
+	return full, nil
+}
+
+// VerifyForwardedAlias protects destructive operations against arbitrary UIDs
+// from the forwarding mailbox.
+func (c *Client) VerifyForwardedAlias(uid uint32, folder, alias string) error {
+	_, err := c.GetForwardedFull(uid, folder, alias)
+	return err
 }
 
 // getFullFromRaw 直接解析整封 MIME 邮件，兼容转发邮件中的 message/rfc822
