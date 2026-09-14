@@ -199,6 +199,18 @@ h1, h2, h3, strong { font-weight: 650; }
 .alias-select { flex: 0 0 auto; }
 .alias-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .alias-actions .button.small { min-height: 44px; }
+.batch-create-grid { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+.batch-number-grid { grid-template-columns: minmax(0, 1fr) 120px 110px; }
+.batch-name-preview { display: grid; gap: 7px; margin: -2px 0 18px; padding: 12px 14px; color: var(--text-3); background: var(--ink-900); border: 1px solid var(--line-soft); border-left: 2px solid var(--mint); border-radius: 6px; font-size: 11px; }
+.batch-name-preview strong { overflow-wrap: anywhere; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+.batch-result-list { display: grid; gap: 7px; max-height: 54vh; overflow-y: auto; }
+.batch-result-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 44px; align-items: center; gap: 10px; min-height: 62px; padding: 8px 10px; background: var(--ink-900); border-left: 2px solid var(--mint); border-radius: 6px; }
+.batch-result-row.failed { border-left-color: var(--coral); }
+.batch-result-row > span { color: var(--text-4); font-size: 11px; }
+.batch-result-row strong, .batch-result-row small { display: block; overflow-wrap: anywhere; }
+.batch-result-row strong { color: var(--text); font-size: 13px; }
+.batch-result-row small { margin-top: 4px; color: var(--text-3); }
+.batch-result-row .batch-meta-error { color: var(--amber); }
 .alias-disable-action { color: var(--text-2); background: transparent; border-color: var(--line); }
 .alias-delete-action { color: var(--coral); background: transparent; border-color: rgba(236, 141, 134, .25); }
 .alias-disable-action:hover { color: var(--amber); background: var(--ink-800); }
@@ -490,6 +502,7 @@ h1, h2, h3, strong { font-weight: 650; }
   .alias-row .alias-actions { width: auto; justify-content: flex-start; gap: 6px; }
   .alias-row .alias-actions .button.small { width: 44px; min-width: 44px; padding: 0; }
   .alias-action-label { display: none; }
+  .batch-create-grid, .batch-number-grid { grid-template-columns: 1fr; gap: 0; }
   .mail-row .mail-code-button, .public-mail-row .mail-code-button { min-height: 44px; font-size: 17px; }
   .public-header-actions { flex-wrap: wrap; justify-content: flex-end; }
   .public-theme-toggle { min-height: 44px; }

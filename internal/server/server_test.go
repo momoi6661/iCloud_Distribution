@@ -13,6 +13,27 @@ import (
 	"icloud_distribution/internal/share"
 )
 
+func TestBatchLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		req   batchCreateReq
+		index int
+		want  string
+	}{
+		{"default 001", batchCreateReq{LabelPrefix: "资格号", NamingRule: "sequence", Separator: "-", StartNumber: 1, Padding: 3}, 0, "资格号-001"},
+		{"custom start", batchCreateReq{LabelPrefix: "mail", NamingRule: "sequence", Separator: "_", StartNumber: 25, Padding: 4}, 1, "mail_0026"},
+		{"same", batchCreateReq{LabelPrefix: "注册", NamingRule: "same"}, 9, "注册"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := batchLabel(tt.req, tt.index)
+			if err != nil || got != tt.want {
+				t.Fatalf("batchLabel() = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
 // newTestServer 构建一个 UI 鉴权测试服务 (无网络依赖)。
 func newTestServer(t *testing.T, token string) *Server {
 	t.Helper()

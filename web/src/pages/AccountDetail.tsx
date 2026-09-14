@@ -5,6 +5,7 @@ import {
   type Account,
   type Alias,
   type AliasMetadata,
+  type BatchCreateResult,
   type FullMailMessage,
   type InboxData,
   type MailMessage,
@@ -429,6 +430,16 @@ export default function AccountDetailPage({
   const [notice, setNotice] = useState("");
   const [createdAlias, setCreatedAlias] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchCount, setBatchCount] = useState(5);
+  const [batchPrefix, setBatchPrefix] = useState("");
+  const [batchNamingRule, setBatchNamingRule] = useState<"sequence" | "same">("sequence");
+  const [batchSeparator, setBatchSeparator] = useState("-");
+  const [batchStartNumber, setBatchStartNumber] = useState(1);
+  const [batchPadding, setBatchPadding] = useState(3);
+  const [batchGroupId, setBatchGroupId] = useState("");
+  const [batchNote, setBatchNote] = useState("");
+  const [batchResult, setBatchResult] = useState<BatchCreateResult | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [organizerOpen, setOrganizerOpen] = useState(false);
@@ -691,6 +702,34 @@ export default function AccountDetailPage({
       await load();
     } catch (e) {
       setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const batchLabelPreview = (offset: number) => {
+    if (batchNamingRule === "same") return batchPrefix.trim() || "名称";
+    return `${batchPrefix.trim() || "名称"}${batchSeparator}${String(batchStartNumber + offset).padStart(batchPadding, "0")}`;
+  };
+  const createAliasBatch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const result = await api.batchCreate(id, {
+        count: batchCount,
+        label_prefix: batchPrefix.trim(),
+        naming_rule: batchNamingRule,
+        separator: batchSeparator,
+        start_number: batchStartNumber,
+        padding: batchPadding,
+        group_id: batchGroupId,
+        note: batchNote.trim(),
+      });
+      setBatchResult(result);
+      setBatchOpen(false);
+      setNotice(`批量创建完成：成功 ${result.succeeded} 个，失败 ${result.failed} 个。`);
+      await load();
+    } catch (e) {
+      setNotice(`批量创建失败：${errorText(e)}`);
     } finally {
       setBusy(false);
     }
@@ -1574,12 +1613,14 @@ export default function AccountDetailPage({
                   />
                 </label>
                 {tab === "aliases" && (
-                  <button
-                    className="button primary"
-                    onClick={() => setAddOpen(true)}
-                  >
-                    新建别名
-                  </button>
+                  <>
+                    <button className="button secondary" onClick={() => setBatchOpen(true)}>
+                      批量创建
+                    </button>
+                    <button className="button primary" onClick={() => setAddOpen(true)}>
+                      新建别名
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1981,7 +2022,7 @@ export default function AccountDetailPage({
         <form className="drawer-form" onSubmit={createAlias}>
           <p className="form-intro">
             在 <span className="mono">{account?.name}</span>{" "}
-            下创建新的隐藏邮箱地址。名称和分组只用于本项目整理。
+            下创建新的隐藏邮箱地址。名称同步到 iCloud，分组只用于本项目整理。
           </p>
           <label className="field">
             <span>名称 / 标签</span>
@@ -2023,6 +2064,91 @@ export default function AccountDetailPage({
               {busy ? "创建中…" : "创建别名"}
               <Icon name="arrow" size={16} />
             </button>
+          </div>
+        </form>
+      </SidePanel>
+      <SidePanel
+        open={batchOpen}
+        title="批量创建别名"
+        onClose={() => !busy && setBatchOpen(false)}
+      >
+        <form className="drawer-form" onSubmit={createAliasBatch}>
+          <p className="form-intro">
+            按统一规则创建邮箱，并一次性设置名称、分组和备注。单次最多 50 个。
+          </p>
+          <div className="batch-create-grid">
+            <label className="field">
+              <span>创建数量</span>
+              <input type="number" min={1} max={50} value={batchCount} onChange={(event) => setBatchCount(Number(event.target.value))} required />
+            </label>
+            <label className="field">
+              <span>名称前缀</span>
+              <input value={batchPrefix} onChange={(event) => setBatchPrefix(event.target.value)} placeholder="例如：资格号" maxLength={180} required autoFocus />
+            </label>
+          </div>
+          <div className="field">
+            <span>命名规则</span>
+            <SelectMenu
+              value={batchNamingRule}
+              options={[
+                { value: "sequence", label: "递增编号" },
+                { value: "same", label: "使用相同名称" },
+              ]}
+              onChange={(value) => setBatchNamingRule(value as "sequence" | "same")}
+              ariaLabel="选择批量命名规则"
+              className="field-select-menu"
+            />
+          </div>
+          {batchNamingRule === "sequence" && (
+            <div className="batch-create-grid batch-number-grid">
+              <label className="field">
+                <span>分隔符</span>
+                <SelectMenu
+                  value={batchSeparator}
+                  options={[
+                    { value: "-", label: "短横线 -" },
+                    { value: "_", label: "下划线 _" },
+                    { value: " ", label: "空格" },
+                    { value: "", label: "不使用" },
+                  ]}
+                  onChange={setBatchSeparator}
+                  ariaLabel="选择名称分隔符"
+                  className="field-select-menu"
+                />
+              </label>
+              <label className="field">
+                <span>起始编号</span>
+                <input type="number" min={1} max={99999999} value={batchStartNumber} onChange={(event) => setBatchStartNumber(Number(event.target.value))} required />
+              </label>
+              <label className="field">
+                <span>编号位数</span>
+                <input type="number" min={1} max={8} value={batchPadding} onChange={(event) => setBatchPadding(Number(event.target.value))} required />
+              </label>
+            </div>
+          )}
+          <div className="batch-name-preview">
+            <span>名称预览</span>
+            <strong>{[0, 1, 2].slice(0, Math.min(3, batchCount)).map(batchLabelPreview).join("、")}</strong>
+          </div>
+          <div className="field">
+            <span>所属分组</span>
+            <SelectMenu
+              value={batchGroupId}
+              options={[{ value: "", label: "未分组" }, ...groups.map((group) => ({ value: group.id, label: group.name }))]}
+              onChange={setBatchGroupId}
+              ariaLabel="选择批量创建邮箱的分组"
+              className="field-select-menu"
+              searchable
+              searchPlaceholder="搜索分组"
+            />
+          </div>
+          <label className="field">
+            <span>统一备注 <small>可选</small></span>
+            <textarea rows={4} value={batchNote} onChange={(event) => setBatchNote(event.target.value)} placeholder="例如：2026 年秋季注册账号" maxLength={2000} />
+          </label>
+          <div className="drawer-actions">
+            <button type="button" className="button secondary" onClick={() => setBatchOpen(false)} disabled={busy}>取消</button>
+            <button type="submit" className="button primary" disabled={busy || !batchPrefix.trim()}>{busy ? "正在创建…" : `创建 ${batchCount} 个邮箱`}</button>
           </div>
         </form>
       </SidePanel>
@@ -2346,6 +2472,42 @@ export default function AccountDetailPage({
             >
               <Icon name="copy" size={15} />
               复制邮箱
+            </button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog
+        open={batchResult !== null}
+        title="批量创建结果"
+        onClose={() => setBatchResult(null)}
+        wide
+      >
+        <div className="dialog-body">
+          <p className="dialog-lead">
+            成功 {batchResult?.succeeded || 0} 个，失败 {batchResult?.failed || 0} 个
+            {batchResult?.metadata_failed ? `，其中 ${batchResult.metadata_failed} 个未保存分组或备注` : ""}。
+          </p>
+          <div className="batch-result-list">
+            {batchResult?.results.map((item) => (
+              <div className={`batch-result-row ${item.success ? "success" : "failed"}`} key={item.index}>
+                <span>{String(item.index).padStart(2, "0")}</span>
+                <div>
+                  <strong>{item.label || "未命名"}</strong>
+                  <small className="mono">{item.email || item.error || "未创建"}</small>
+                  {item.metadata_error && <small className="batch-meta-error">{item.metadata_error}</small>}
+                </div>
+                {item.success && item.email && (
+                  <button className="icon-button" aria-label={`复制 ${item.email}`} title="复制邮箱" onClick={() => { navigator.clipboard.writeText(item.email || ""); setNotice("邮箱地址已复制。"); }}>
+                    <Icon name="copy" size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="dialog-actions">
+            <button className="button secondary" onClick={() => setBatchResult(null)}>关闭</button>
+            <button className="button primary" disabled={!batchResult?.succeeded} onClick={() => { const emails = batchResult?.results.filter((item) => item.success && item.email).map((item) => item.email).join("\n") || ""; navigator.clipboard.writeText(emails); setNotice(`已复制 ${batchResult?.succeeded || 0} 个邮箱地址。`); }}>
+              <Icon name="copy" size={15} />复制全部邮箱
             </button>
           </div>
         </div>

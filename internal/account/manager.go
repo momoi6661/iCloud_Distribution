@@ -590,24 +590,46 @@ func (m *Manager) DeleteGroup(accountID, groupID string) error {
 }
 
 func (m *Manager) UpdateAliasMetadata(accountID string, meta AliasMetadata) (AliasMetadata, error) {
-	var err error
-	meta.AliasID = strings.TrimSpace(meta.AliasID)
-	meta.Email = strings.TrimSpace(meta.Email)
-	meta.GroupID = strings.TrimSpace(meta.GroupID)
-	meta.Note = strings.TrimSpace(meta.Note)
-	if meta.AliasID == "" || len(meta.AliasID) > maxOrganizerID {
-		return AliasMetadata{}, fmt.Errorf("alias_id 不能为空且长度不能超过 %d", maxOrganizerID)
+	updated, err := m.UpdateAliasMetadataBatch(accountID, []AliasMetadata{meta})
+	if err != nil {
+		return AliasMetadata{}, err
 	}
-	if len(meta.Email) > maxOrganizerEmail || len(meta.Note) > maxOrganizerNote {
-		return AliasMetadata{}, fmt.Errorf("email 或 note 超出长度限制")
+	return updated[0], nil
+}
+
+// UpdateAliasMetadataBatch validates and persists one organizer batch with a
+// single write. This keeps bulk creation fast and prevents partially saved
+// local grouping data.
+func (m *Manager) UpdateAliasMetadataBatch(accountID string, metas []AliasMetadata) ([]AliasMetadata, error) {
+	if len(metas) == 0 {
+		return []AliasMetadata{}, nil
+	}
+	updated := make([]AliasMetadata, len(metas))
+	copy(updated, metas)
+	for i := range updated {
+		meta := &updated[i]
+		meta.AliasID = strings.TrimSpace(meta.AliasID)
+		meta.Email = strings.TrimSpace(meta.Email)
+		meta.Label = strings.TrimSpace(meta.Label)
+		meta.GroupID = strings.TrimSpace(meta.GroupID)
+		meta.Note = strings.TrimSpace(meta.Note)
+		if meta.AliasID == "" || len(meta.AliasID) > maxOrganizerID {
+			return nil, fmt.Errorf("alias_id 不能为空且长度不能超过 %d", maxOrganizerID)
+		}
+		if len(meta.Email) > maxOrganizerEmail || len(meta.Label) > maxOrganizerName || len(meta.Note) > maxOrganizerNote {
+			return nil, fmt.Errorf("email、label 或 note 超出长度限制")
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	acc, ok := m.accounts[accountID]
 	if !ok {
-		return AliasMetadata{}, fmt.Errorf("账号不存在: %s", accountID)
+		return nil, fmt.Errorf("账号不存在: %s", accountID)
 	}
-	if meta.GroupID != "" {
+	for _, meta := range updated {
+		if meta.GroupID == "" {
+			continue
+		}
 		found := false
 		for _, group := range acc.Groups {
 			if group.ID == meta.GroupID {
@@ -616,16 +638,21 @@ func (m *Manager) UpdateAliasMetadata(accountID string, meta AliasMetadata) (Ali
 			}
 		}
 		if !found {
-			return AliasMetadata{}, fmt.Errorf("分组不存在: %s", meta.GroupID)
+			return nil, fmt.Errorf("分组不存在: %s", meta.GroupID)
 		}
 	}
-	meta.UpdatedAt = time.Now().Format(time.RFC3339)
+	now := time.Now().Format(time.RFC3339)
 	if acc.AliasMetadata == nil {
 		acc.AliasMetadata = make(map[string]AliasMetadata)
 	}
-	acc.AliasMetadata[meta.AliasID] = meta
-	err = m.save()
-	return meta, err
+	for i := range updated {
+		updated[i].UpdatedAt = now
+		acc.AliasMetadata[updated[i].AliasID] = updated[i]
+	}
+	if err := m.save(); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 func organizerName(name string) (string, error) {

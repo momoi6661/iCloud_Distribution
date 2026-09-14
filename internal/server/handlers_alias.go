@@ -2,8 +2,8 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -91,14 +91,61 @@ const maxBatchCount = 50
 type batchCreateReq struct {
 	Count       int    `json:"count" binding:"required,min=1"`
 	LabelPrefix string `json:"label_prefix"`
+	NamingRule  string `json:"naming_rule"`
+	Separator   string `json:"separator"`
+	StartNumber int    `json:"start_number"`
+	Padding     int    `json:"padding"`
+	GroupID     string `json:"group_id"`
+	Note        string `json:"note"`
 }
 
 type batchResult struct {
-	Index   int    `json:"index"`
-	Success bool   `json:"success"`
-	Email   string `json:"email,omitempty"`
-	Label   string `json:"label"`
-	Error   string `json:"error,omitempty"`
+	Index         int    `json:"index"`
+	Success       bool   `json:"success"`
+	Email         string `json:"email,omitempty"`
+	Label         string `json:"label"`
+	Error         string `json:"error,omitempty"`
+	AnonymousID   string `json:"anonymous_id,omitempty"`
+	MetadataError string `json:"metadata_error,omitempty"`
+}
+
+func batchLabel(req batchCreateReq, index int) (string, error) {
+	prefix := strings.TrimSpace(req.LabelPrefix)
+	if prefix == "" {
+		return "", fmt.Errorf("名称前缀不能为空")
+	}
+	rule := req.NamingRule
+	if rule == "" {
+		rule = "sequence"
+	}
+	if rule == "same" {
+		if len(prefix) > 200 {
+			return "", fmt.Errorf("名称不能超过 200 个字符")
+		}
+		return prefix, nil
+	}
+	if rule != "sequence" {
+		return "", fmt.Errorf("不支持的命名规则")
+	}
+	if req.Separator != "" && req.Separator != "-" && req.Separator != "_" && req.Separator != " " {
+		return "", fmt.Errorf("不支持的名称分隔符")
+	}
+	start := req.StartNumber
+	if start < 1 {
+		start = 1
+	}
+	padding := req.Padding
+	if padding == 0 {
+		padding = 3
+	}
+	if padding < 1 || padding > 8 {
+		return "", fmt.Errorf("编号位数必须在 1 到 8 之间")
+	}
+	label := fmt.Sprintf("%s%s%0*d", prefix, req.Separator, padding, start+index)
+	if len(label) > 200 {
+		return "", fmt.Errorf("生成的名称不能超过 200 个字符")
+	}
+	return label, nil
 }
 
 func (s *Server) batchCreateAliases(c *gin.Context) {
@@ -112,6 +159,30 @@ func (s *Server) batchCreateAliases(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "单次最多创建 50 个别名")
 		return
 	}
+	for i := 0; i < req.Count; i++ {
+		if _, err := batchLabel(req, i); err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.GroupID != "" {
+		groups, _, err := s.mgr.Organizer(id)
+		if err != nil {
+			fail(c, http.StatusNotFound, err.Error())
+			return
+		}
+		found := false
+		for _, group := range groups {
+			if group.ID == req.GroupID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fail(c, http.StatusBadRequest, "分组不存在")
+			return
+		}
+	}
 
 	client, err := s.mgr.HMEClient(id, false)
 	if err != nil {
@@ -122,10 +193,7 @@ func (s *Server) batchCreateAliases(c *gin.Context) {
 	results := make([]batchResult, 0, req.Count)
 	succeeded := 0
 	for i := 0; i < req.Count; i++ {
-		label := req.LabelPrefix
-		if label != "" {
-			label = label + " " + strconv.Itoa(i+1)
-		}
+		label, _ := batchLabel(req, i)
 
 		res, err := client.CreateAlias(label, 5)
 		if err != nil {
@@ -139,16 +207,55 @@ func (s *Server) batchCreateAliases(c *gin.Context) {
 		succeeded++
 		results = append(results, batchResult{Index: i + 1, Success: true, Email: res.Email, Label: res.Label})
 	}
+	metadataFailed := 0
+	if succeeded > 0 && (req.GroupID != "" || strings.TrimSpace(req.Note) != "") {
+		if aliases, listErr := client.ListAliases(); listErr == nil {
+			byEmail := make(map[string]account.AliasMetadata, len(aliases))
+			for _, alias := range aliases {
+				byEmail[strings.ToLower(alias.Email)] = account.AliasMetadata{AliasID: alias.AnonymousID, Email: alias.Email, Label: alias.Label, GroupID: req.GroupID, Note: req.Note}
+			}
+			metas := make([]account.AliasMetadata, 0, succeeded)
+			resultIndexes := make([]int, 0, succeeded)
+			for i := range results {
+				if !results[i].Success {
+					continue
+				}
+				meta, found := byEmail[strings.ToLower(results[i].Email)]
+				if !found || meta.AliasID == "" {
+					results[i].MetadataError = "创建成功，但未能匹配 iCloud 别名 ID"
+					metadataFailed++
+					continue
+				}
+				results[i].AnonymousID = meta.AliasID
+				metas = append(metas, meta)
+				resultIndexes = append(resultIndexes, i)
+			}
+			if _, metaErr := s.mgr.UpdateAliasMetadataBatch(id, metas); metaErr != nil {
+				for _, index := range resultIndexes {
+					results[index].MetadataError = metaErr.Error()
+					metadataFailed++
+				}
+			}
+		} else {
+			for i := range results {
+				if results[i].Success {
+					results[i].MetadataError = "创建成功，但保存分组和备注失败: " + listErr.Error()
+					metadataFailed++
+				}
+			}
+		}
+	}
 
 	_ = s.mgr.SaveCookies(id, client.Cookies)
 
 	ok(c, gin.H{
-		"account_id":  id,
-		"requested":   req.Count,
-		"succeeded":   succeeded,
-		"failed":      len(results) - succeeded,
-		"interrupted": len(results) < req.Count,
-		"results":     results,
+		"account_id":      id,
+		"requested":       req.Count,
+		"succeeded":       succeeded,
+		"failed":          len(results) - succeeded,
+		"interrupted":     len(results) < req.Count,
+		"metadata_failed": metadataFailed,
+		"results":         results,
 	})
 }
 

@@ -109,6 +109,8 @@ export interface BatchResult {
   email?: string
   label: string
   error?: string
+  anonymous_id?: string
+  metadata_error?: string
 }
 
 export interface BatchCreateResult {
@@ -116,6 +118,7 @@ export interface BatchCreateResult {
   succeeded: number
   failed: number
   interrupted: boolean
+  metadata_failed?: number
   results: BatchResult[]
 }
 
@@ -215,7 +218,7 @@ export const api = {
   deleteOrganizerGroup: (accountId: string, groupId: string) => request<{ id: string }>('DELETE', `/api/accounts/${accountId}/groups/${groupId}`),
   updateAliasMeta: (accountId: string, meta: { alias_id: string; email: string; label: string; group_id: string; note: string }) => request<AliasMetadata>('PUT', `/api/accounts/${accountId}/alias-meta`, meta),
   createAlias: (accountId: string, label: string, groupId = '') => request<{ email: string; label: string; anonymous_id?: string }>('POST', '/api/create', { account_id: accountId, label, group_id: groupId }),
-  batchCreate: (accountId: string, count: number, labelPrefix: string) => request<BatchCreateResult>('POST', `/api/accounts/${accountId}/aliases/batch`, { count, label_prefix: labelPrefix }),
+  batchCreate: (accountId: string, options: { count: number; label_prefix: string; naming_rule: 'sequence' | 'same'; separator: string; start_number: number; padding: number; group_id: string; note: string }) => request<BatchCreateResult>('POST', `/api/accounts/${accountId}/aliases/batch`, options),
   deactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/deactivate`, { account_id: accountId }),
   reactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/reactivate`, { account_id: accountId }),
   deleteAlias: (accountId: string, anonymousId: string) => request('DELETE', `/api/aliases/${anonymousId}`, { account_id: accountId }),
