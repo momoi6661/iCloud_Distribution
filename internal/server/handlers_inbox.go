@@ -321,3 +321,88 @@ func (s *Server) deleteMessage(c *gin.Context) {
 	}
 	ok(c, gin.H{"uid": uidStr, "folder": c.Query("folder")})
 }
+
+type batchDeleteMessagesReq struct {
+	AccountID string                   `json:"account_id"`
+	Source    string                   `json:"source"`
+	Messages  []batchDeleteMessageItem `json:"messages"`
+}
+
+type batchDeleteMessageItem struct {
+	UID    string `json:"uid"`
+	Folder string `json:"folder"`
+	Alias  string `json:"alias"`
+}
+
+// batchDeleteMessages performs one IMAP STORE+EXPUNGE per folder instead of
+// issuing one complete IMAP transaction for every selected message.
+func (s *Server) batchDeleteMessages(c *gin.Context) {
+	var req batchDeleteMessagesReq
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.AccountID) == "" || len(req.Messages) == 0 {
+		fail(c, http.StatusBadRequest, "参数缺失: account_id, messages")
+		return
+	}
+	if len(req.Messages) > 200 {
+		fail(c, http.StatusBadRequest, "一次最多删除 200 封邮件")
+		return
+	}
+	if req.Source == "web_api" {
+		fail(c, http.StatusBadRequest, "Web API 模式不能删除邮件，请切换到 IMAP")
+		return
+	}
+
+	var mc *mail.Client
+	var unlock interface{ Unlock() }
+	var err error
+	if req.Source == "forward_imap" {
+		mc, unlock, _, err = s.mgr.AcquireForwardIMAP(req.AccountID)
+	} else {
+		mc, unlock, err = s.mgr.AcquireIMAP(req.AccountID)
+	}
+	if err != nil {
+		fail(c, http.StatusBadRequest, "删除邮件需要可用的 IMAP 配置: "+err.Error())
+		return
+	}
+	defer unlock.Unlock()
+
+	byFolder := make(map[string][]uint32)
+	seen := make(map[string]bool)
+	for _, item := range req.Messages {
+		uid64, parseErr := strconv.ParseUint(item.UID, 10, 32)
+		if parseErr != nil {
+			fail(c, http.StatusBadRequest, "参数错误: uid 必须是数字")
+			return
+		}
+		folder := strings.TrimSpace(item.Folder)
+		if folder == "" {
+			folder = "INBOX"
+		}
+		key := folder + "\x00" + item.UID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if req.Source == "forward_imap" {
+			alias := strings.TrimSpace(item.Alias)
+			if alias == "" {
+				fail(c, http.StatusBadRequest, "转发邮箱删除需要指定隐藏邮箱地址")
+				return
+			}
+			if verifyErr := mc.VerifyForwardedAlias(uint32(uid64), folder, alias); verifyErr != nil {
+				fail(c, http.StatusForbidden, verifyErr.Error())
+				return
+			}
+		}
+		byFolder[folder] = append(byFolder[folder], uint32(uid64))
+	}
+
+	deleted := 0
+	for folder, uids := range byFolder {
+		if deleteErr := mc.DeleteMessages(uids, folder); deleteErr != nil {
+			fail(c, http.StatusBadGateway, fmt.Sprintf("批量删除邮件失败（已删除 %d 封）: %v", deleted, deleteErr))
+			return
+		}
+		deleted += len(uids)
+	}
+	ok(c, gin.H{"requested": len(req.Messages), "deleted": deleted})
+}

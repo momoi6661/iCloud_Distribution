@@ -93,6 +93,11 @@ export interface FullMailMessage extends MailMessage {
   content_type: string
 }
 
+export interface BatchMessageDeleteResult {
+	requested: number
+	deleted: number
+}
+
 export interface LoginStartResult {
   status: 'done' | 'otp_required'
   session_id?: string
@@ -239,5 +244,6 @@ export const api = {
   inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
   getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method'], alias = '') => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}&alias=${encodeURIComponent(alias)}`),
   deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method'], alias = '') => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}&alias=${encodeURIComponent(alias)}`),
+	deleteMessages: (accountId: string, source: InboxData['method'], messages: Array<{ uid: string; folder?: string; alias?: string }>) => request<BatchMessageDeleteResult>('POST', '/api/inbox/messages/delete', { account_id: accountId, source, messages }),
 	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
 }

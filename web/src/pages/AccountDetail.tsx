@@ -890,25 +890,16 @@ export default function AccountDetailPage({
     setMessageBatchDeleteConfirm(false);
     setNotice(`正在从邮箱服务器删除 ${targets.length} 封邮件…`);
     try {
-      const results = await Promise.allSettled(
-        targets.map((item) =>
-          api.deleteMessage(id, item.id, item.folder, inbox.method, item.alias || alias),
-        ),
-      );
-      const deleted = new Set(
-        targets
-          .filter((_, index) => results[index].status === "fulfilled")
-          .map(mailKey),
-      );
-      const failed = targets.length - deleted.size;
-      const failedMessages = targets.filter((item) => !deleted.has(mailKey(item)));
-      if (failedMessages.length) setInbox((current) => current ? { ...current, messages: newestFirst([...current.messages, ...failedMessages]) } : current);
-      setNotice(
-        failed
-          ? `已删除 ${deleted.size} 封，${failed} 封删除失败。`
-          : `已删除 ${deleted.size} 封邮件。`,
-      );
-    } finally {
+	  const result = await api.deleteMessages(
+		id,
+		inbox.method,
+		targets.map((item) => ({ uid: item.id, folder: item.folder, alias: item.alias || alias })),
+	  );
+	  setNotice(`已删除 ${result.deleted} 封邮件。`);
+	} catch (e) {
+	  setInbox((current) => current ? { ...current, messages: newestFirst([...current.messages, ...targets]) } : current);
+	  setNotice(`批量删除邮件失败：${errorText(e)}`);
+	} finally {
       targetKeys.forEach((key) => deletingMessages.current.delete(key));
     }
   };

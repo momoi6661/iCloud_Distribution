@@ -124,6 +124,7 @@ func (s *Server) register() {
 		authed.GET("/inbox/count", s.inboxCount)
 		authed.GET("/inbox/message", s.getMessage)
 		authed.DELETE("/inbox/message", s.deleteMessage)
+		authed.POST("/inbox/messages/delete", s.batchDeleteMessages)
 
 		// ===== 系统 =====
 		authed.POST("/reload", s.reloadConfig)

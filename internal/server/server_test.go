@@ -206,6 +206,8 @@ func TestHandlerParamValidation(t *testing.T) {
 		{"inbox 缺少 account_id", "GET", "/api/inbox", ``, http.StatusBadRequest},
 		{"inbox 读取方式无效", "GET", "/api/inbox?account_id=a&method=unknown", ``, http.StatusBadRequest},
 		{"inbox/message uid 非数字", "GET", "/api/inbox/message?account_id=a&uid=abc", ``, http.StatusBadRequest},
+		{"批量删除邮件缺少列表", "POST", "/api/inbox/messages/delete", `{"account_id":"a","source":"imap"}`, http.StatusBadRequest},
+		{"Web API 不能批量删除邮件", "POST", "/api/inbox/messages/delete", `{"account_id":"a","source":"web_api","messages":[{"uid":"1","folder":"INBOX"}]}`, http.StatusBadRequest},
 		{"添加账号缺少 name", "POST", "/api/accounts", `{"email":"a@b.c"}`, http.StatusBadRequest},
 		{"设置密码缺少字段", "POST", "/api/accounts/acc_x/password", `{"icloud_email":"a@b.c"}`, http.StatusBadRequest},
 	}

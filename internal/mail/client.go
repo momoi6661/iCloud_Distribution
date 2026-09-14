@@ -929,8 +929,18 @@ func (c *Client) getFullFromRaw(uid uint32, folder string, envelope *imap.Messag
 // DeleteMessage marks one IMAP message as deleted and expunges it from the
 // selected mailbox. UID is scoped to folder, so callers must keep both values.
 func (c *Client) DeleteMessage(uid uint32, folder string) error {
+	return c.DeleteMessages([]uint32{uid}, folder)
+}
+
+// DeleteMessages removes multiple messages from one mailbox in one STORE and
+// one EXPUNGE round trip. Calling DeleteMessage repeatedly is unnecessarily
+// slow and can make browser requests time out while waiting for the IMAP lock.
+func (c *Client) DeleteMessages(uids []uint32, folder string) error {
 	if c.cli == nil {
 		return fmt.Errorf("未连接")
+	}
+	if len(uids) == 0 {
+		return nil
 	}
 	if folder == "" {
 		folder = "INBOX"
@@ -939,7 +949,7 @@ func (c *Client) DeleteMessage(uid uint32, folder string) error {
 		return err
 	}
 	seqset := new(imap.SeqSet)
-	seqset.AddNum(uid)
+	seqset.AddNum(uids...)
 	item := imap.FormatFlagsOp(imap.AddFlags, true)
 	if err := c.cli.UidStore(seqset, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
 		return fmt.Errorf("标记邮件删除失败: %w", err)
