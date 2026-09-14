@@ -4,6 +4,9 @@ import { api, type FullMailMessage, type MailMessage, type MailReadMethod } from
 import Icon from '../components/Icon'
 import MailHTMLFrame from '../components/MailHTMLFrame'
 import { getInitialTheme, persistTheme, type ThemeMode } from '../theme'
+import SelectMenu from '../components/SelectMenu'
+
+type RefreshInterval = 0 | 5000 | 15000 | 30000
 
 const dateText = (date?: string) => date ? new Date(date).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 const newestFirst = (items: MailMessage[]) => [...items].sort((left, right) => {
@@ -51,30 +54,57 @@ export default function SharePage() {
   const [messageError, setMessageError] = useState('')
   const [loading, setLoading] = useState(true)
   const [messageLoading, setMessageLoading] = useState(false)
+  const [autoRefreshMs, setAutoRefreshMs] = useState<RefreshInterval>(() => {
+    const saved = Number(localStorage.getItem('mail-auto-refresh-ms'))
+    return [0, 5000, 15000, 30000].includes(saved) ? saved as RefreshInterval : 0
+  })
   const [copyNotice, setCopyNotice] = useState('')
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const messageRequest = useRef(0)
+  const inboxRequest = useRef(0)
+  const autoRefreshRunning = useRef(false)
 
-  const load = async () => {
-    messageRequest.current += 1
-    setLoading(true)
-    setPageError('')
-    setMessageError('')
-    setSelected(null)
+  const load = async (background = false) => {
+    if (background && autoRefreshRunning.current) return
+    if (background) autoRefreshRunning.current = true
+    const request = ++inboxRequest.current
+    if (!background) {
+      messageRequest.current += 1
+      setLoading(true)
+      setPageError('')
+      setMessageError('')
+      setSelected(null)
+    }
     void api.publicShareInfo(token).then((info) => { setAlias(info.alias); setExpiresAt(info.expires_at || '') }).catch(() => {})
     try {
       const inbox = await api.publicShareInbox(token)
-      setAlias(inbox.alias)
-      setMessages(newestFirst(inbox.messages || []))
-      setMethod(inbox.method)
+      if (request === inboxRequest.current) {
+        setAlias(inbox.alias)
+        setMessages(newestFirst(inbox.messages || []))
+        setMethod(inbox.method)
+      }
     } catch (error) {
-      setPageError((error as Error).message)
+      if (!background) setPageError((error as Error).message)
     } finally {
-      setLoading(false)
+      if (!background) setLoading(false)
+      if (background) autoRefreshRunning.current = false
     }
   }
 
   useEffect(() => { void load() }, [token])
+  useEffect(() => {
+    localStorage.setItem('mail-auto-refresh-ms', String(autoRefreshMs))
+    if (autoRefreshMs === 0) return undefined
+    let timer: number | undefined
+    const schedule = () => {
+      timer = window.setTimeout(async () => {
+        await load(true)
+        schedule()
+      }, autoRefreshMs)
+    }
+    schedule()
+    return () => { if (timer !== undefined) window.clearTimeout(timer) }
+  }, [autoRefreshMs, token])
 
   const openMessage = async (item: MailMessage) => {
     const request = ++messageRequest.current
@@ -107,14 +137,14 @@ export default function SharePage() {
     try { await navigator.clipboard.writeText(alias); setCopyNotice('邮箱地址已复制') } catch { setCopyNotice('复制失败，请手动复制') }
   }
 
-  if (pageError) return <main className="public-share"><div className="share-error"><div className="form-icon"><Icon name="alert" /></div><span className="eyebrow">共享收件箱</span><h1>链接不可用</h1><p>{pageError}</p><button className="button secondary" onClick={load}>重新加载</button></div></main>
+  if (pageError) return <main className="public-share"><div className="share-error"><div className="form-icon"><Icon name="alert" /></div><span className="eyebrow">共享收件箱</span><h1>链接不可用</h1><p>{pageError}</p><button className="button secondary" onClick={() => void load()}>重新加载</button></div></main>
 
   return <main className="public-share">
     {copyNotice && <div className="notice toast" role="status" aria-live="polite"><span>{copyNotice}</span><button className="text-button" onClick={() => setCopyNotice('')}>关闭</button></div>}
     <header className="public-header"><span className="auth-brand">iCloud 邮箱共享</span><div className="public-header-actions"><span className="status status-ready">只读访问</span><button className="button secondary public-theme-toggle" type="button" onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); persistTheme(next) }} aria-label={`切换到${theme === 'dark' ? '浅色' : '深色'}`}>切换到{theme === 'dark' ? '浅色' : '深色'}</button></div></header>
     <section className="public-card panel">
       <>
-        <div className="public-card-header"><div className="public-share-heading"><span className="eyebrow">共享收件箱</span><div className="public-alias-line"><h1>{alias || '共享邮箱'}</h1>{alias && <button className="icon-button copy-alias-button" aria-label="复制邮箱地址" title="复制邮箱地址" onClick={() => void copyAlias()}><Icon name="copy" size={17} /></button>}</div><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><button className="icon-button share-refresh-button" aria-label={loading ? '正在刷新邮件' : '刷新邮件列表'} title={loading ? '正在刷新邮件' : '刷新邮件列表'} onClick={() => void load()} disabled={loading}><Icon name="refresh" size={18} /></button></div>
+        <div className="public-card-header"><div className="public-share-heading"><span className="eyebrow">共享收件箱</span><div className="public-alias-line"><h1>{alias || '共享邮箱'}</h1>{alias && <button className="icon-button copy-alias-button" aria-label="复制邮箱地址" title="复制邮箱地址" onClick={() => void copyAlias()}><Icon name="copy" size={17} /></button>}</div><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><div className="public-inbox-controls"><SelectMenu value={String(autoRefreshMs)} className="auto-refresh-select" ariaLabel="自动刷新间隔" options={[{ value: '0', label: '自动刷新：关闭' }, { value: '5000', label: '自动刷新：5 秒' }, { value: '15000', label: '自动刷新：15 秒' }, { value: '30000', label: '自动刷新：30 秒' }]} onChange={(value) => setAutoRefreshMs(Number(value) as RefreshInterval)} /><button className="icon-button share-refresh-button" aria-label={loading ? '正在刷新邮件' : '刷新邮件列表'} title={loading ? '正在刷新邮件' : '刷新邮件列表'} onClick={() => void load()} disabled={loading}><Icon name="refresh" size={18} /></button></div></div>
         {method === 'web_api' && <div className="inline-banner">当前链接通过 Web API 提供邮件摘要，完整正文需要 IMAP。</div>}
         {loading && messages.length === 0 ? <div className="public-mail-loading" role="status"><strong>正在读取邮件列表</strong><span>正在获取标题、发件人和简短正文摘要。</span></div> : messages.length === 0 ? <div className="empty-state small-empty"><h3>还没有邮件。</h3><p>刷新收件箱后，新邮件会显示在这里。</p></div> : <div className="mail-list public-mail-list">{messages.map((item) => <InlinePublicMailRow item={item} selected={selected} loading={messageLoading} error={messageError} method={method} onOpen={() => void openMessage(item)} onClose={closeMessage} onRetry={() => void openMessage(item)} onCopyCode={(code) => void copyCode(code)} key={`${item.folder}-${item.id}`} />)}</div>}
       </>

@@ -398,6 +398,15 @@ h1, h2, h3, strong { font-weight: 650; }
 @media (max-width: 600px) { .public-card-header { padding-inline: 16px; } .mail-list { padding-inline: 12px; } .mail-row, .public-mail-row { padding-inline: 4px; } }
 @media (max-width: 600px) { .mail-method-menu { width: 100%; } .public-message-header { flex-direction: column; } .public-message-header > .button { width: 100%; } .public-message-body { min-height: 320px; padding: 20px 16px 40px; } .public-message-view, .public-message-view .inbox-reader-state { min-height: 320px; } }
 
+.inbox-refresh-controls, .public-inbox-controls { display: flex; align-items: center; gap: 8px; }
+.auto-refresh-select { min-width: 156px; }
+.auto-refresh-select .select-trigger { min-height: 44px; }
+.public-inbox-controls { flex: 0 0 auto; }
+@media (max-width: 720px) {
+  .inbox-refresh-controls, .public-inbox-controls { width: 100%; }
+  .inbox-refresh-controls .auto-refresh-select, .public-inbox-controls .auto-refresh-select { flex: 1; min-width: 0; }
+}
+
 /* Local inbox: keep the list vertical and reveal the reader below the selected mail. */
 .inbox-split { display: block; min-height: 0; border-top: 1px solid var(--line-soft); }
 .inbox-split.no-message .inbox-reader { display: none; }

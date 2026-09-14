@@ -22,6 +22,7 @@ import { Dialog, SidePanel } from "../components/Overlay";
 
 type Tab = "aliases" | "disabled" | "inbox" | "shares";
 type ShareFilter = "all" | "active" | "expired";
+type RefreshInterval = 0 | 5000 | 15000 | 30000;
 const PAGE_SIZE = 20;
 const INBOX_COUNT_CACHE_MS = 60_000;
 const MAX_SHARE_EXPIRY_MINUTES = 5_256_000;
@@ -406,6 +407,10 @@ export default function AccountDetailPage({
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState(requestedAlias);
   const [mailMethod, setMailMethod] = useState<MailReadPreference>("auto");
+  const [autoRefreshMs, setAutoRefreshMs] = useState<RefreshInterval>(() => {
+    const saved = Number(localStorage.getItem("mail-auto-refresh-ms"));
+    return [0, 5000, 15000, 30000].includes(saved) ? (saved as RefreshInterval) : 0;
+  });
   const [label, setLabel] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const [aliasPage, setAliasPage] = useState(1);
@@ -438,6 +443,7 @@ export default function AccountDetailPage({
     useState(false);
   const messageRequest = useRef(0);
   const inboxRequest = useRef(0);
+  const autoRefreshRunning = useRef(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAlias, setShareAlias] = useState("");
   const [shareLabel, setShareLabel] = useState("");
@@ -699,6 +705,41 @@ export default function AccountDetailPage({
       if (request === inboxRequest.current) setBusy(false);
     }
   };
+  const refreshInbox = async (
+    selectedAlias = alias,
+    preferredMethod: MailReadPreference = mailMethod,
+  ) => {
+    if (autoRefreshRunning.current) return;
+    autoRefreshRunning.current = true;
+    const request = ++inboxRequest.current;
+    try {
+      const normalized = normalizeInbox(
+        await api.inbox(id, selectedAlias, 20, 7, preferredMethod),
+      );
+      rememberInboxCount(id, selectedAlias, normalized.count);
+      if (request === inboxRequest.current) {
+        setInbox(normalized);
+        setInboxCount(normalized.count);
+      }
+    } catch (e) {
+      if (request === inboxRequest.current) setNotice(`自动刷新失败：${errorText(e)}`);
+    } finally {
+      autoRefreshRunning.current = false;
+    }
+  };
+  useEffect(() => {
+    localStorage.setItem("mail-auto-refresh-ms", String(autoRefreshMs));
+    if (tab !== "inbox" || autoRefreshMs === 0 || !alias) return undefined;
+    let timer: number | undefined;
+    const schedule = () => {
+      timer = window.setTimeout(async () => {
+        await refreshInbox(alias, mailMethod);
+        schedule();
+      }, autoRefreshMs);
+    };
+    schedule();
+    return () => { if (timer !== undefined) window.clearTimeout(timer); };
+  }, [alias, autoRefreshMs, mailMethod, tab]);
   const changeMailMethod = (value: string) => {
     const next = value as MailReadPreference;
     setMailMethod(next);
@@ -1611,7 +1652,19 @@ export default function AccountDetailPage({
                 <span className="eyebrow">最近收件</span>
                 <h2>{alias || "全部别名"}</h2>
               </div>
-              <div className="inline-actions">
+              <div className="inline-actions inbox-refresh-controls">
+                <SelectMenu
+                  value={String(autoRefreshMs)}
+                  className="auto-refresh-select"
+                  ariaLabel="自动刷新间隔"
+                  options={[
+                    { value: "0", label: "自动刷新：关闭" },
+                    { value: "5000", label: "自动刷新：5 秒" },
+                    { value: "15000", label: "自动刷新：15 秒" },
+                    { value: "30000", label: "自动刷新：30 秒" },
+                  ]}
+                  onChange={(value) => setAutoRefreshMs(Number(value) as RefreshInterval)}
+                />
                 <button
                   className="button secondary"
                   onClick={() => openInbox(alias)}
