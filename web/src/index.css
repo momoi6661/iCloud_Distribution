@@ -565,3 +565,26 @@ h1, h2, h3, strong { font-weight: 650; }
   --line: rgba(20, 55, 40, .16);
   --line-soft: rgba(20, 55, 40, .10);
 }
+
+.user-create-panel { margin-bottom: 18px; }
+.user-create-form { display: grid; grid-template-columns: minmax(180px,1fr) minmax(220px,1fr) auto; align-items: end; gap: 12px; padding: 0 22px 22px; }
+.user-create-form .field { margin: 0; }
+.user-list { padding: 0 22px 20px; }
+.user-row { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.user-row:last-child { border-bottom: 0; }
+.user-main { flex: 1; min-width: 0; }
+.user-main strong, .user-main span { display: block; }
+.user-main strong { color: var(--text); font-weight: 650; }
+.user-main span { margin-top: 5px; color: var(--text-3); font-size: 12px; }
+.user-actions { display: flex; align-items: center; gap: 6px; }
+.profile-panel { max-width: 620px; }
+.profile-form { padding: 0 22px 24px; }
+@media (max-width: 720px) {
+  .user-create-form { grid-template-columns: 1fr; padding-inline: 16px; }
+  .user-list { padding-inline: 16px; }
+  .user-row { align-items: flex-start; flex-wrap: wrap; }
+  .user-main { min-width: calc(100% - 48px); }
+  .user-actions { width: 100%; flex-wrap: wrap; padding-left: 46px; }
+  .user-actions .button { flex: 1; }
+  .profile-form { padding-inline: 16px; }
+}

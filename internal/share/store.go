@@ -19,12 +19,40 @@ import (
 
 // Share 一个分享链接。
 type Share struct {
-	Token     string `json:"token"`
-	AccountID string `json:"account_id"`
-	Alias     string `json:"alias"`
-	Label     string `json:"label,omitempty"`
-	CreatedAt string `json:"created_at"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	Token       string `json:"token"`
+	OwnerUserID string `json:"owner_user_id,omitempty"`
+	AccountID   string `json:"account_id"`
+	Alias       string `json:"alias"`
+	Label       string `json:"label,omitempty"`
+	CreatedAt   string `json:"created_at"`
+	ExpiresAt   string `json:"expires_at,omitempty"`
+}
+
+func (s *Store) AssignMissingOwners(ownerForAccount func(string) string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for _, sh := range s.shares {
+		if sh.OwnerUserID == "" {
+			sh.OwnerUserID = ownerForAccount(sh.AccountID)
+			changed = true
+		}
+	}
+	if changed {
+		return s.save()
+	}
+	return nil
+}
+
+func (s *Store) SetOwner(token, ownerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh, ok := s.shares[token]
+	if !ok {
+		return fmt.Errorf("分享不存在")
+	}
+	sh.OwnerUserID = ownerID
+	return s.save()
 }
 
 // Store 分享链接存储,线程安全。

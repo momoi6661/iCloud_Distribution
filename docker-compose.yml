@@ -5,8 +5,8 @@ services:
     ports:
       - "6981:6981"
     environment:
-      # 必填: 管理 UI 登录密码，不写入 data 或前端
-      - HME_UI_PASSWORD=${HME_UI_PASSWORD:?请先设置 HME_UI_PASSWORD}
+      - HME_SUPERADMIN_USERNAME=${HME_SUPERADMIN_USERNAME:?请设置 HME_SUPERADMIN_USERNAME}
+      - HME_SUPERADMIN_PASSWORD=${HME_SUPERADMIN_PASSWORD:?请设置 HME_SUPERADMIN_PASSWORD}
     volumes:
       # accounts.json / shares.json 持久化到宿主机 ./data
       - ./data:/app/data

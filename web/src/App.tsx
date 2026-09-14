@@ -6,6 +6,8 @@ import AccountsPage from './pages/Accounts'
 import DisabledAccountsPage from './pages/DisabledAccounts'
 import AccountDetailPage from './pages/AccountDetail'
 import SharePage from './pages/SharePage'
+import UsersPage from './pages/Users'
+import ProfilePage from './pages/Profile'
 
 export default function App() {
   const [loading, setLoading] = useState(true)
@@ -26,6 +28,8 @@ export default function App() {
         <Route path="/" element={authed ? <AccountsPage onLogout={() => setAuthed(false)} /> : <Navigate to="/login" replace />} />
         <Route path="/disabled" element={authed ? <DisabledAccountsPage onLogout={() => setAuthed(false)} /> : <Navigate to="/login" replace />} />
         <Route path="/accounts/:id" element={authed ? <AccountDetailPage onLogout={() => setAuthed(false)} /> : <Navigate to="/login" replace />} />
+        <Route path="/users" element={authed ? <UsersPage onLogout={() => setAuthed(false)} /> : <Navigate to="/login" replace />} />
+        <Route path="/profile" element={authed ? <ProfilePage onLogout={() => setAuthed(false)} /> : <Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

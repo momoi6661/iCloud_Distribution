@@ -5,7 +5,7 @@
 //   - 两段式自动授权 (login/start → login/otp)
 //   - HME 别名管理 (创建/批量创建/停用/激活/删除)
 //   - 邮件读取 (IMAP 优先,Web API 回退)
-//   - UI 访问鉴权 (由 HME_UI_PASSWORD 提供密码,所有管理 API 需要会话 Cookie)
+//   - UI 访问鉴权 (由超级管理员环境变量和 SQLite 普通用户提供凭据,所有管理 API 需要会话 Cookie)
 package server
 
 import (
@@ -67,6 +67,15 @@ func (s *Server) register() {
 
 		authed := api.Group("")
 		authed.Use(s.uiMiddleware())
+		authed.POST("/ui/password", s.changeOwnPassword)
+		admins := authed.Group("/admin")
+		admins.Use(s.superadminOnly())
+		admins.GET("/users", s.listUsers)
+		admins.POST("/users", s.createUser)
+		admins.PUT("/users/:id/password", s.resetUserPassword)
+		admins.PUT("/users/:id/status", s.setUserStatus)
+		admins.DELETE("/users/:id", s.deleteUser)
+		authed.Use(s.ownershipMiddleware())
 
 		// ===== 账号管理 =====
 		authed.GET("/accounts", s.listAccounts)

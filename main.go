@@ -9,7 +9,8 @@
 //
 // 环境变量:
 //
-//	HME_UI_PASSWORD  UI 登录密码 (必填)
+//	HME_SUPERADMIN_USERNAME  超级管理员用户名 (必填)
+//	HME_SUPERADMIN_PASSWORD  超级管理员密码 (必填)
 package main
 
 import (
@@ -30,9 +31,10 @@ func main() {
 	debug := flag.Bool("debug", false, "调试模式 (启用 Gin 调试日志)")
 	flag.Parse()
 
-	uiPassword := os.Getenv("HME_UI_PASSWORD")
-	if uiPassword == "" {
-		log.Fatal("缺少环境变量 HME_UI_PASSWORD，服务拒绝启动")
+	superUsername := os.Getenv("HME_SUPERADMIN_USERNAME")
+	superPassword := os.Getenv("HME_SUPERADMIN_PASSWORD")
+	if superUsername == "" || superPassword == "" {
+		log.Fatal("缺少环境变量 HME_SUPERADMIN_USERNAME 或 HME_SUPERADMIN_PASSWORD，服务拒绝启动")
 	}
 
 	log.Printf("iCloud Distribution 启动 addr=%s", *addr)
@@ -46,6 +48,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("初始化账号管理器失败: %v", err)
 	}
+	if err := mgr.AssignMissingOwners(auth.SuperadminID); err != nil {
+		log.Fatalf("迁移账号归属失败: %v", err)
+	}
 	log.Printf("账号加载完成 count=%d data_dir=%s", len(mgr.ListAccounts()), abs)
 
 	logins := auth.NewLoginStore()
@@ -55,9 +60,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("初始化分享存储失败: %v", err)
 	}
+	if err := shares.AssignMissingOwners(func(accountID string) string {
+		owner, _ := mgr.Owner(accountID)
+		if owner == "" {
+			return auth.SuperadminID
+		}
+		return owner
+	}); err != nil {
+		log.Fatalf("迁移分享归属失败: %v", err)
+	}
 
-	ui := auth.NewUIAuth(uiPassword)
-	log.Printf("鉴权模式: 环境变量密码")
+	users, err := auth.NewUserStore(filepath.Join(abs, "users.db"))
+	if err != nil {
+		log.Fatalf("初始化用户数据库失败: %v", err)
+	}
+	defer users.Close()
+	ui, err := auth.NewUIAuth(users, superUsername, superPassword)
+	if err != nil {
+		log.Fatalf("初始化 UI 鉴权失败: %v", err)
+	}
+	log.Printf("鉴权模式: 多用户，超级管理员=%s", superUsername)
 
 	srv := server.New(mgr, logins, ui, shares, server.StaticFS(), *debug)
 

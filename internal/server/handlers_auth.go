@@ -21,7 +21,8 @@ import (
 // 不应把用户踢出 UI 会话。
 func (s *Server) uiMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if s.ui != nil && !s.ui.ValidRequest(c.Request) {
+		identity, valid := s.ui.Identity(c.Request)
+		if !valid {
 			c.JSON(http.StatusUnauthorized, apiResp{
 				Success: false,
 				Message: "未登录或会话已过期",
@@ -30,53 +31,47 @@ func (s *Server) uiMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		c.Set("ui_identity", *identity)
 		c.Next()
 	}
 }
 
 type uiLoginReq struct {
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
 // uiLogin 校验登录,成功则写入会话 Cookie。
 func (s *Server) uiLogin(c *gin.Context) {
-	if s.ui == nil {
-		ok(c, gin.H{"auth_required": false})
-		return
-	}
-
 	var req uiLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 
-	if req.Password == "" {
-		fail(c, http.StatusBadRequest, "参数错误: 请输入密码")
+	if req.Username == "" || req.Password == "" {
+		fail(c, http.StatusBadRequest, "参数错误: 请输入用户名和密码")
 		return
 	}
-	if !s.ui.CheckPassword(req.Password) {
-		fail(c, http.StatusUnauthorized, "密码错误")
+	identity, token, err := s.ui.Login(req.Username, req.Password)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	s.ui.IssueCookie(c.Writer)
-	ok(c, gin.H{"auth_required": true})
+	s.ui.IssueCookie(c.Writer, c.Request, token)
+	ok(c, gin.H{"auth_required": true, "user": identity})
 }
 
 // uiLogout 清除会话 Cookie。
 func (s *Server) uiLogout(c *gin.Context) {
-	if s.ui != nil {
-		s.ui.ClearCookie(c.Writer)
-	}
+	s.ui.ClearCookie(c.Writer, c.Request)
 	ok(c, gin.H{"message": "已注销"})
 }
 
 // uiStatus 返回当前鉴权状态。
 func (s *Server) uiStatus(c *gin.Context) {
-	ok(c, gin.H{
-		"auth_required": s.ui != nil,
-		"authenticated": s.ui == nil || s.ui.ValidRequest(c.Request),
-	})
+	identity, authenticated := s.ui.Identity(c.Request)
+	ok(c, gin.H{"auth_required": true, "authenticated": authenticated, "user": identity})
 }
 
 // ====================================================================

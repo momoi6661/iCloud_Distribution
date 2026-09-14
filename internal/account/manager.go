@@ -22,6 +22,7 @@ import (
 // Account 描述一个 iCloud 账号。
 type Account struct {
 	ID             string                   `json:"id"`
+	OwnerUserID    string                   `json:"owner_user_id,omitempty"`
 	Name           string                   `json:"name"`
 	RealEmail      string                   `json:"real_email"`
 	ICloudEmail    string                   `json:"icloud_email"`
@@ -41,6 +42,54 @@ type Account struct {
 	HasCookies     bool                     `json:"has_cookies,omitempty"`
 	HasAppPassword bool                     `json:"has_app_password,omitempty"`
 	HasForwardIMAP bool                     `json:"has_forward_imap,omitempty"`
+}
+
+func (m *Manager) AssignMissingOwners(ownerID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	for _, acc := range m.accounts {
+		if acc.OwnerUserID == "" {
+			acc.OwnerUserID = ownerID
+			changed = true
+		}
+	}
+	if changed {
+		return m.save()
+	}
+	return nil
+}
+
+func (m *Manager) SetOwner(id, ownerID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return fmt.Errorf("账号不存在")
+	}
+	acc.OwnerUserID = ownerID
+	return m.save()
+}
+
+func (m *Manager) Owner(id string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return "", false
+	}
+	return acc.OwnerUserID, true
+}
+
+func (m *Manager) ListAccountsFor(ownerID string, includeDisabled bool) []*Account {
+	all := m.ListAccounts()
+	out := make([]*Account, 0, len(all))
+	for _, acc := range all {
+		if acc.OwnerUserID == ownerID && (includeDisabled || acc.Status != statusDisabled) {
+			out = append(out, acc)
+		}
+	}
+	return out
 }
 
 // ForwardIMAPConfig describes the TLS IMAP mailbox that receives forwarded

@@ -5,6 +5,8 @@ export interface ApiResp<T = unknown> {
   message?: string
   data?: T
 }
+export interface UIIdentity { id: string; username: string; role: 'superadmin' | 'user'; must_change_password?: boolean }
+export interface AppUser extends UIIdentity { status: 'active' | 'disabled'; must_change_password: boolean; created_at: string; last_login_at?: string }
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -130,6 +132,7 @@ export interface BatchAccountResult {
 export interface UIStatus {
   auth_required: boolean
   authenticated: boolean
+  user?: UIIdentity
 }
 
 export interface ShareLink {
@@ -175,7 +178,13 @@ export interface OrganizerData {
 
 export const api = {
   uiStatus: () => request<UIStatus>('GET', '/api/ui/status'),
-  uiLogin: (password: string) => request('POST', '/api/ui/login', { password }),
+  uiLogin: (username: string, password: string) => request<{ auth_required: boolean; user: UIIdentity }>('POST', '/api/ui/login', { username, password }),
+  listUsers: () => request<{ users: AppUser[] }>('GET', '/api/admin/users'),
+  createUser: (username: string, password: string, mustChange = true) => request<AppUser>('POST', '/api/admin/users', { username, password, must_change_password: mustChange }),
+  resetUserPassword: (id: string, password: string, mustChange = true) => request('PUT', `/api/admin/users/${id}/password`, { password, must_change_password: mustChange }),
+  setUserStatus: (id: string, status: 'active' | 'disabled') => request('PUT', `/api/admin/users/${id}/status`, { status }),
+  deleteUser: (id: string) => request('DELETE', `/api/admin/users/${id}`),
+  changeOwnPassword: (currentPassword: string, newPassword: string) => request('POST', '/api/ui/password', { current_password: currentPassword, new_password: newPassword }),
   uiLogout: () => request('POST', '/api/ui/logout'),
 
   listAccounts: () => request<Account[]>('GET', '/api/accounts'),

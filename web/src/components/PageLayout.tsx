@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import Icon from './Icon'
@@ -10,6 +10,8 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
   const isDetail = location.pathname.startsWith('/accounts/')
   const active = isDetail ? 'accounts' : location.pathname === '/disabled' ? 'disabled' : 'accounts'
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
+  const [role,setRole]=useState('')
+  useEffect(()=>{api.uiStatus().then(status=>setRole(status.user?.role||'')).catch(()=>undefined)},[])
   const toggleTheme = () => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); persistTheme(next) }
 
   const go = (path: string) => {
@@ -36,6 +38,8 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
           <p className="nav-label">工作区</p>
           <button className={`nav-item ${active === 'accounts' ? 'active' : ''}`} onClick={() => go('/')}><Icon name="grid" /><span>活跃账号</span></button>
           <button className={`nav-item ${active === 'disabled' ? 'active' : ''}`} onClick={() => go('/disabled')}><Icon name="archive" /><span>禁用账号</span></button>
+          {role==='superadmin'&&<button className={`nav-item ${location.pathname==='/users'?'active':''}`} onClick={()=>go('/users')}><Icon name="settings" /><span>用户管理</span></button>}
+          {role==='user'&&<button className={`nav-item ${location.pathname==='/profile'?'active':''}`} onClick={()=>go('/profile')}><Icon name="settings" /><span>账号安全</span></button>}
         </nav>
         <div className="sidebar-bottom">
           <button className="nav-item logout-item" onClick={logout}><Icon name="logout" /><span>退出登录</span></button>

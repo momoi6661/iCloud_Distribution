@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,14 +27,26 @@ func newTestServer(t *testing.T, token string) *Server {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	return New(mgr, logins, auth.NewUIAuth(token), shares, nil, true)
+	if token == "" {
+		token = "test-token"
+	}
+	users, err := auth.NewUserStore(filepath.Join(t.TempDir(), "users.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = users.Close() })
+	ui, err := auth.NewUIAuth(users, "liuyuquan", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(mgr, logins, ui, shares, nil, true)
 }
 
 // loginAndGetCookie 完成 UI 登录并返回会话 Cookie。
 func loginAndGetCookie(t *testing.T, s *Server, token string) *http.Cookie {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"password":"`+token+`"}`))
+	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"username":"liuyuquan","password":"`+token+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -69,7 +82,7 @@ func TestUIAuth_Required(t *testing.T) {
 
 	// 错误口令 → 401
 	w = httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"password":"wrong"}`))
+	req := httptest.NewRequest("POST", "/api/ui/login", strings.NewReader(`{"username":"liuyuquan","password":"wrong"}`))
 	req.Header.Set("Content-Type", "application/json")
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -87,19 +100,10 @@ func TestUIAuth_Required(t *testing.T) {
 	}
 }
 
-func TestUIAuth_Disabled(t *testing.T) {
-	s := newTestServer(t, "") // 空口令 = 关闭鉴权
-
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts", nil))
-	if w.Code != http.StatusOK {
-		t.Errorf("关闭鉴权时应直接放行, 实际 %d", w.Code)
-	}
-}
-
 func TestHandlerParamValidation(t *testing.T) {
 	s := newTestServer(t, "")
 	h := s.Handler()
+	cookie := loginAndGetCookie(t, s, "test-token")
 
 	tests := []struct {
 		name   string
@@ -131,6 +135,7 @@ func TestHandlerParamValidation(t *testing.T) {
 			} else {
 				req = httptest.NewRequest(tt.method, tt.path, nil)
 			}
+			req.AddCookie(cookie)
 			h.ServeHTTP(w, req)
 			if w.Code != tt.want {
 				t.Errorf("状态码 = %d, 期望 %d, body: %s", w.Code, tt.want, w.Body.String())
@@ -142,11 +147,13 @@ func TestHandlerParamValidation(t *testing.T) {
 func TestAddAndListAccount(t *testing.T) {
 	s := newTestServer(t, "")
 	h := s.Handler()
+	cookie := loginAndGetCookie(t, s, "test-token")
 
 	// 添加账号 (无 Cookie → pending)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/accounts", strings.NewReader(`{"name":"主号","email":"me@example.com"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("添加账号失败: %d %s", w.Code, w.Body.String())
@@ -166,7 +173,9 @@ func TestAddAndListAccount(t *testing.T) {
 
 	// 列表应包含该账号且不含 cookies
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts", nil))
+	req = httptest.NewRequest("GET", "/api/accounts", nil)
+	req.AddCookie(cookie)
+	h.ServeHTTP(w, req)
 	var listResp struct {
 		Success bool              `json:"success"`
 		Data    []json.RawMessage `json:"data"`
@@ -209,10 +218,12 @@ func TestSPAFallback(t *testing.T) {
 func TestAccountDisableRestoreAndBatchEndpoints(t *testing.T) {
 	s := newTestServer(t, "")
 	h := s.Handler()
+	cookie := loginAndGetCookie(t, s, "test-token")
 	create := func(name string) string {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/api/accounts", strings.NewReader(`{"name":"`+name+`"}`))
 		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
 		h.ServeHTTP(w, req)
 		if w.Code != http.StatusCreated {
 			t.Fatalf("创建账号失败: %d %s", w.Code, w.Body.String())
@@ -233,6 +244,7 @@ func TestAccountDisableRestoreAndBatchEndpoints(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
 		h.ServeHTTP(w, req)
 		return w.Code, w.Body.String()
 	}
@@ -240,7 +252,9 @@ func TestAccountDisableRestoreAndBatchEndpoints(t *testing.T) {
 		t.Fatalf("禁用失败: %d %s", code, body)
 	}
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/accounts/disabled", nil))
+	req := httptest.NewRequest("GET", "/api/accounts/disabled", nil)
+	req.AddCookie(cookie)
+	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), a) {
 		t.Fatalf("禁用列表异常: %d %s", w.Code, w.Body.String())
 	}
@@ -261,10 +275,12 @@ func TestAccountDisableRestoreAndBatchEndpoints(t *testing.T) {
 func TestOrganizerRoutesAndValidation(t *testing.T) {
 	s := newTestServer(t, "")
 	h := s.Handler()
+	cookie := loginAndGetCookie(t, s, "test-token")
 	request := func(method, path, body string) (int, string) {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
 		h.ServeHTTP(w, req)
 		return w.Code, w.Body.String()
 	}

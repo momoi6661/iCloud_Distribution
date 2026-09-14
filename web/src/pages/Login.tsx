@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import Icon from '../components/Icon'
 
-export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
+export default function LoginPage({ onSuccess }: { onSuccess: (mustChange?: boolean) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -18,8 +18,9 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
     const values = Object.fromEntries(new FormData(event.currentTarget).entries()) as Record<string, string>
     setBusy(true)
     try {
-      await api.uiLogin(values.password)
-      onSuccess(); navigate('/')
+      const result = await api.uiLogin(values.username, values.password)
+      onSuccess(result.user?.must_change_password)
+      navigate(result.user?.must_change_password ? '/profile' : '/')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -34,13 +35,14 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       <section className="auth-form-wrap">
         <div className="auth-form-card">
           <div className="auth-form-heading"><div className="form-icon"><Icon name="settings" /></div><div><span className="eyebrow">控制台登录</span><h2>欢迎回来</h2></div></div>
-          <p className="form-intro">输入服务器环境变量中配置的访问密码。</p>
+          <p className="form-intro">使用系统账号登录。普通账号由超级管理员创建。</p>
           <form onSubmit={submit}>
-            <label className="field"><span>访问密码</span><input name="password" type="password" autoComplete="current-password" placeholder="输入访问密码" required autoFocus /></label>
+            <label className="field"><span>用户名</span><input name="username" autoComplete="username" placeholder="输入用户名" required autoFocus /></label>
+            <label className="field"><span>密码</span><input name="password" type="password" autoComplete="current-password" placeholder="输入密码" required /></label>
             {error && <div className="form-error" role="alert"><Icon name="alert" size={16} />{error}</div>}
             <button className="button primary full-width" type="submit" disabled={busy}>{busy ? '连接中…' : '登录'}<Icon name="arrow" size={17} /></button>
           </form>
-          <p className="auth-footnote">密码只用于当前服务验证，不会写入浏览器或项目数据。</p>
+          <p className="auth-footnote">系统不开放注册。如需账号，请联系超级管理员。</p>
         </div>
       </section>
     </main>

@@ -10,11 +10,28 @@ import (
 )
 
 func (s *Server) listAccounts(c *gin.Context) {
-	ok(c, s.mgr.ListAccounts())
+	identity := currentIdentity(c)
+	if identity.IsSuperadmin() {
+		ok(c, s.mgr.ListAccounts())
+		return
+	}
+	ok(c, s.mgr.ListAccountsFor(identity.ID, false))
 }
 
 func (s *Server) listDisabledAccounts(c *gin.Context) {
-	ok(c, s.mgr.ListDisabledAccounts())
+	identity := currentIdentity(c)
+	if identity.IsSuperadmin() {
+		ok(c, s.mgr.ListDisabledAccounts())
+		return
+	}
+	all := s.mgr.ListAccountsFor(identity.ID, true)
+	disabled := make([]*account.Account, 0)
+	for _, item := range all {
+		if item.Status == "disabled" {
+			disabled = append(disabled, item)
+		}
+	}
+	ok(c, disabled)
 }
 
 func (s *Server) getOrganizer(c *gin.Context) {
@@ -115,6 +132,11 @@ func (s *Server) addAccount(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := s.mgr.SetOwner(acc.ID, currentIdentity(c).ID); err != nil {
+		fail(c, http.StatusInternalServerError, "保存账号归属失败")
+		return
+	}
+	acc.OwnerUserID = currentIdentity(c).ID
 	// 补充设置登录邮箱 (用于两段式授权)
 	if req.Email != "" {
 		_ = s.mgr.SetLoginEmail(acc.ID, req.Email)
