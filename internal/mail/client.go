@@ -249,14 +249,24 @@ func (c *Client) fetchForwardedMessages(uids []uint32, folder, target string) ([
 			continue
 		}
 		summary, matches, err := parseForwardedSummary(msg, raw, folder, target)
+		var rawPreview []byte
+		if previewReader := msg.GetBody(rawPreviewSection); previewReader != nil {
+			rawPreview, _ = io.ReadAll(previewReader)
+			// Forwarding providers may retain the hidden address only inside a
+			// nested message/rfc822. Keep exact-address matching so unrelated
+			// messages in the real mailbox never leak into this alias view.
+			if !matches && containsExactEmail(string(rawPreview), target) {
+				matches = true
+			}
+		}
 		if err == nil && matches {
 			if previewReader := msg.GetBody(previewSection); previewReader != nil {
 				summary.Preview = previewFromRaw(previewReader)
 				summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
 			}
 			if summary.Preview == "" || looksLikeForwardedHeader(summary.Preview) {
-				if rawReader := msg.GetBody(rawPreviewSection); rawReader != nil {
-					summary.Preview = previewFromRaw(rawReader)
+				if len(rawPreview) > 0 {
+					summary.Preview = previewFromRaw(bytes.NewReader(rawPreview))
 					summary.Code = ExtractVerificationCode(summary.Subject + "\n" + summary.Preview)
 				}
 			}

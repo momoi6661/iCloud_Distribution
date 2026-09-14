@@ -218,6 +218,20 @@ func TestParseForwardedSummaryUsesHeadersWithoutReadingBody(t *testing.T) {
 	}
 }
 
+func TestForwardedAliasExactMatchInNestedMessage(t *testing.T) {
+	nested := "From: sender@example.com\r\nTo: target.alias@icloud.com\r\n\r\ncode 482913"
+	if !containsExactEmail(nested, "target.alias@icloud.com") {
+		t.Fatal("nested forwarded recipient should match")
+	}
+	if containsExactEmail(nested, "alias@icloud.com") {
+		t.Fatal("similar alias must not match nested forwarded recipient")
+	}
+	ordinary := "From: sender@example.com\r\nTo: real-user@qq.com\r\n\r\nordinary mail"
+	if containsExactEmail(ordinary, "target.alias@icloud.com") {
+		t.Fatal("ordinary mailbox message must not match hidden alias")
+	}
+}
+
 func TestSanitizeHTMLKeepsMailLayoutAndBlocksActiveContent(t *testing.T) {
 	got := sanitizeHTML(`<style>.mail{color:#17211c}.button{display:inline-block}</style><style>@import url(https://tracker.example/style.css)</style><div class="mail" style="padding: 16px"><h2>验证码</h2><p>代码 <strong>482913</strong></p><a class="button" href="javascript:alert(1)">危险链接</a><a href="https://example.com">安全链接</a><script>steal()</script><img src="https://tracker.example/pixel" /></div>`)
 	if strings.Contains(got, "script") || strings.Contains(got, "steal") || strings.Contains(got, "tracker.example") || strings.Contains(got, "javascript:") || strings.Contains(got, "@import") {
