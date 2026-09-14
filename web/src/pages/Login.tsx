@@ -2,8 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import Icon from '../components/Icon'
+import PasswordInput from '../components/PasswordInput'
+import type { UIIdentity } from '../api/client'
 
-export default function LoginPage({ onSuccess }: { onSuccess: (mustChange?: boolean) => void }) {
+export default function LoginPage({ onSuccess }: { onSuccess: (user: UIIdentity) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -19,7 +21,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (mustChange?: bool
     setBusy(true)
     try {
       const result = await api.uiLogin(values.username, values.password)
-      onSuccess(result.user?.must_change_password)
+      onSuccess(result.user)
       navigate(result.user?.must_change_password ? '/profile' : '/')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -38,7 +40,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (mustChange?: bool
           <p className="form-intro">使用系统账号登录。普通账号由超级管理员创建。</p>
           <form onSubmit={submit}>
             <label className="field"><span>用户名</span><input name="username" autoComplete="username" placeholder="输入用户名" required autoFocus /></label>
-            <label className="field"><span>密码</span><input name="password" type="password" autoComplete="current-password" placeholder="输入密码" required /></label>
+            <label className="field"><span>密码</span><PasswordInput name="password" autoComplete="current-password" placeholder="输入密码" required /></label>
             {error && <div className="form-error" role="alert"><Icon name="alert" size={16} />{error}</div>}
             <button className="button primary full-width" type="submit" disabled={busy}>{busy ? '连接中…' : '登录'}<Icon name="arrow" size={17} /></button>
           </form>

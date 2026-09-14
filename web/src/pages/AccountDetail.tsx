@@ -17,6 +17,7 @@ import Icon from "../components/Icon";
 import MailHTMLFrame from "../components/MailHTMLFrame";
 import PageLayout from "../components/PageLayout";
 import Pagination from "../components/Pagination";
+import PasswordInput from "../components/PasswordInput";
 import SelectMenu from "../components/SelectMenu";
 import { Dialog, SidePanel } from "../components/Overlay";
 
@@ -2547,9 +2548,8 @@ function ForwardIMAPForm({
       </label>
       <label className="field">
         <span>应用专用密码或授权码</span>
-        <input
+        <PasswordInput
           name="password"
-          type="password"
           placeholder={
             account?.has_forward_imap ? "重新输入以更新配置" : "请输入授权码"
           }
@@ -2634,9 +2634,8 @@ function AppPasswordForm({
       </label>
       <label className="field">
         <span>App 专用密码</span>
-        <input
+        <PasswordInput
           name="password"
-          type="password"
           placeholder={
             account?.has_app_password
               ? "重新输入以更新配置"

@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { useIdentity } from '../auth-context'
 import Icon from './Icon'
 import { getInitialTheme, persistTheme, type ThemeMode } from '../theme'
 
@@ -10,8 +11,7 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
   const isDetail = location.pathname.startsWith('/accounts/')
   const active = isDetail ? 'accounts' : location.pathname === '/disabled' ? 'disabled' : 'accounts'
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
-  const [role,setRole]=useState('')
-  useEffect(()=>{api.uiStatus().then(status=>setRole(status.user?.role||'')).catch(()=>undefined)},[])
+  const role = useIdentity()?.role || ''
   const toggleTheme = () => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); persistTheme(next) }
 
   const go = (path: string) => {
