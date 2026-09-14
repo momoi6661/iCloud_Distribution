@@ -121,8 +121,16 @@ func (s *Server) listInbox(c *gin.Context) {
 	alias := strings.TrimSpace(c.Query("alias"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	fetchLimit := page*limit + 1
 
-	method, messages, err := s.readInbox(accountID, alias, limit, days, c.DefaultQuery("method", "auto"))
+	method, messages, err := s.readInbox(accountID, alias, fetchLimit, days, c.DefaultQuery("method", "auto"))
 	if err != nil {
 		status := http.StatusBadGateway
 		if strings.Contains(err.Error(), "不支持的邮件读取方式") || strings.Contains(err.Error(), "未配置") || strings.Contains(err.Error(), "需要指定") {
@@ -131,7 +139,18 @@ func (s *Server) listInbox(c *gin.Context) {
 		fail(c, status, err.Error())
 		return
 	}
+	hasMore := len(messages) > page*limit
+	start := (page - 1) * limit
+	if start > len(messages) {
+		start = len(messages)
+	}
+	end := start + limit
+	if end > len(messages) {
+		end = len(messages)
+	}
+	messages = messages[start:end]
 	for i := range messages {
+		messages[i].Preview = mail.NormalizePreviewText(messages[i].Preview)
 		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
 		if messages[i].Preview == "" && messages[i].Code != "" {
 			messages[i].Preview = "已识别验证码：" + messages[i].Code
@@ -141,6 +160,9 @@ func (s *Server) listInbox(c *gin.Context) {
 		"account_id": accountID,
 		"alias":      alias,
 		"count":      len(messages),
+		"page":       page,
+		"page_size":  limit,
+		"has_more":   hasMore,
 		"messages":   messages,
 		"method":     method,
 	})

@@ -847,7 +847,7 @@ func previewFromRaw(r io.Reader) string {
 		// therefore no longer contain enough MIME headers for previewFromMIME.
 		// Decode the common transfer markers before stripping HTML so fragments
 		// such as "Your code is 482913=2E=20" remain readable and searchable.
-		if strings.Contains(text, "=20") || strings.Contains(text, "=3D") || strings.Contains(text, "=2E") || strings.Contains(text, "=0A") {
+		if quotedPrintableEscapePattern.MatchString(text) {
 			if decoded, decodeErr := io.ReadAll(quotedprintable.NewReader(strings.NewReader(text))); decodeErr == nil {
 				text = string(decoded)
 			}
@@ -861,6 +861,18 @@ func previewFromRaw(r io.Reader) string {
 		text = string(runes[:200])
 	}
 	return text
+}
+
+var quotedPrintableEscapePattern = regexp.MustCompile(`(?i)=[0-9a-f]{2}|=\r?\n`)
+
+// NormalizePreviewText cleans preview text returned by every mail backend.
+// The iCloud Web API can return quoted-printable bytes directly even though
+// its preview field is JSON text, while IMAP usually exposes MIME metadata.
+func NormalizePreviewText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	return previewFromRaw(strings.NewReader(text))
 }
 
 func looksLikeForwardedHeader(text string) bool {

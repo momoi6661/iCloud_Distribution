@@ -397,6 +397,7 @@ export default function AccountDetailPage({
   const [shares, setShares] = useState<ShareLink[]>([]);
   const [inbox, setInbox] = useState<InboxData | null>(null);
   const [inboxCount, setInboxCount] = useState<number | null>(null);
+  const [inboxPage, setInboxPage] = useState(1);
   const [groups, setGroups] = useState<OrganizerGroup[]>([]);
   const [metadata, setMetadata] = useState<Record<string, AliasMetadata>>({});
   const [aliasesLoading, setAliasesLoading] = useState(true);
@@ -489,12 +490,13 @@ export default function AccountDetailPage({
     setInboxCount(cachedInboxCount(id, requestedAlias));
     setBusy(true);
     api
-      .inbox(id, requestedAlias, 20, 7, mailMethod)
+      .inbox(id, requestedAlias, 20, 7, mailMethod, 1)
       .then((value) => {
         const normalized = normalizeInbox(value);
         rememberInboxCount(id, requestedAlias, normalized.count);
         if (request === inboxRequest.current) {
           setInbox(normalized);
+          setInboxPage(1);
           setInboxCount(normalized.count);
           setSelectedMessages([]);
         }
@@ -674,6 +676,7 @@ export default function AccountDetailPage({
   const openInbox = async (
     selectedAlias = "",
     preferredMethod: MailReadPreference = mailMethod,
+    requestedPage = 1,
   ) => {
     const request = ++inboxRequest.current;
     messageRequest.current += 1;
@@ -683,6 +686,7 @@ export default function AccountDetailPage({
     setInbox(null);
     setInboxCount(cachedInboxCount(id, selectedAlias));
     setAlias(selectedAlias);
+    setInboxPage(requestedPage);
     setTab("inbox");
     setSearchParams(
       selectedAlias ? { tab: "inbox", alias: selectedAlias } : { tab: "inbox" },
@@ -691,7 +695,7 @@ export default function AccountDetailPage({
     setBusy(true);
     try {
       const normalized = normalizeInbox(
-        await api.inbox(id, selectedAlias, 20, 7, preferredMethod),
+        await api.inbox(id, selectedAlias, 20, 7, preferredMethod, requestedPage),
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
       if (request === inboxRequest.current) {
@@ -714,7 +718,7 @@ export default function AccountDetailPage({
     const request = ++inboxRequest.current;
     try {
       const normalized = normalizeInbox(
-        await api.inbox(id, selectedAlias, 20, 7, preferredMethod),
+        await api.inbox(id, selectedAlias, 20, 7, preferredMethod, inboxPage),
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
       if (request === inboxRequest.current) {
@@ -739,7 +743,7 @@ export default function AccountDetailPage({
     };
     schedule();
     return () => { if (timer !== undefined) window.clearTimeout(timer); };
-  }, [alias, autoRefreshMs, mailMethod, tab]);
+  }, [alias, autoRefreshMs, inboxPage, mailMethod, tab]);
   const changeMailMethod = (value: string) => {
     const next = value as MailReadPreference;
     setMailMethod(next);
@@ -1224,7 +1228,7 @@ export default function AccountDetailPage({
     setNotice(messageText);
     void load().then(async () => {
       if (tab === "inbox")
-        setInbox(normalizeInbox(await api.inbox(id, alias, 20, 7, mailMethod)));
+        setInbox(normalizeInbox(await api.inbox(id, alias, 20, 7, mailMethod, inboxPage)));
     });
   };
   const renderAliasRow = (item: Alias, index: number) => {
@@ -1667,7 +1671,7 @@ export default function AccountDetailPage({
                 />
                 <button
                   className="button secondary"
-                  onClick={() => openInbox(alias)}
+                  onClick={() => openInbox(alias, mailMethod, inboxPage)}
                 >
                   <Icon name="refresh" size={16} />
                   刷新
@@ -1766,6 +1770,14 @@ export default function AccountDetailPage({
                   ))}
                 </div>
               </div>
+            )}
+            {inbox && (inboxPage > 1 || inbox.has_more) && (
+              <Pagination
+                page={inboxPage}
+                totalPages={inboxPage + (inbox.has_more ? 1 : 0)}
+                onChange={(page) => void openInbox(alias, mailMethod, page)}
+                label="邮件分页"
+              />
             )}
           </div>
         )}

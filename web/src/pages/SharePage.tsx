@@ -5,6 +5,7 @@ import Icon from '../components/Icon'
 import MailHTMLFrame from '../components/MailHTMLFrame'
 import { getInitialTheme, persistTheme, type ThemeMode } from '../theme'
 import SelectMenu from '../components/SelectMenu'
+import Pagination from '../components/Pagination'
 
 type RefreshInterval = 0 | 5000 | 15000 | 30000
 
@@ -47,6 +48,8 @@ export default function SharePage() {
   const { token = '' } = useParams()
   const [alias, setAlias] = useState('')
   const [messages, setMessages] = useState<MailMessage[]>([])
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
   const [method, setMethod] = useState<MailReadMethod>('web_api')
   const [expiresAt, setExpiresAt] = useState('')
   const [selected, setSelected] = useState<FullMailMessage | null>(null)
@@ -64,7 +67,7 @@ export default function SharePage() {
   const inboxRequest = useRef(0)
   const autoRefreshRunning = useRef(false)
 
-  const load = async (background = false) => {
+  const load = async (background = false, requestedPage = page) => {
     if (background && autoRefreshRunning.current) return
     if (background) autoRefreshRunning.current = true
     const request = ++inboxRequest.current
@@ -77,11 +80,13 @@ export default function SharePage() {
     }
     void api.publicShareInfo(token).then((info) => { setAlias(info.alias); setExpiresAt(info.expires_at || '') }).catch(() => {})
     try {
-      const inbox = await api.publicShareInbox(token)
+      const inbox = await api.publicShareInbox(token, 30, 7, requestedPage)
       if (request === inboxRequest.current) {
         setAlias(inbox.alias)
         setMessages(newestFirst(inbox.messages || []))
         setMethod(inbox.method)
+        setPage(requestedPage)
+        setHasMore(Boolean(inbox.has_more))
       }
     } catch (error) {
       if (!background) setPageError((error as Error).message)
@@ -104,7 +109,7 @@ export default function SharePage() {
     }
     schedule()
     return () => { if (timer !== undefined) window.clearTimeout(timer) }
-  }, [autoRefreshMs, token])
+  }, [autoRefreshMs, page, token])
 
   const openMessage = async (item: MailMessage) => {
     const request = ++messageRequest.current
@@ -147,6 +152,7 @@ export default function SharePage() {
         <div className="public-card-header"><div className="public-share-heading"><span className="eyebrow">共享收件箱</span><div className="public-alias-line"><h1>{alias || '共享邮箱'}</h1>{alias && <button className="icon-button copy-alias-button" aria-label="复制邮箱地址" title="复制邮箱地址" onClick={() => void copyAlias()}><Icon name="copy" size={17} /></button>}</div><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><div className="public-inbox-controls"><SelectMenu value={String(autoRefreshMs)} className="auto-refresh-select" ariaLabel="自动刷新间隔" options={[{ value: '0', label: '自动刷新：关闭' }, { value: '5000', label: '自动刷新：5 秒' }, { value: '15000', label: '自动刷新：15 秒' }, { value: '30000', label: '自动刷新：30 秒' }]} onChange={(value) => setAutoRefreshMs(Number(value) as RefreshInterval)} /><button className="icon-button share-refresh-button" aria-label={loading ? '正在刷新邮件' : '刷新邮件列表'} title={loading ? '正在刷新邮件' : '刷新邮件列表'} onClick={() => void load()} disabled={loading}><Icon name="refresh" size={18} /></button></div></div>
         {method === 'web_api' && <div className="inline-banner">当前链接通过 Web API 提供邮件摘要，完整正文需要 IMAP。</div>}
         {loading && messages.length === 0 ? <div className="public-mail-loading" role="status"><strong>正在读取邮件列表</strong><span>正在获取标题、发件人和简短正文摘要。</span></div> : messages.length === 0 ? <div className="empty-state small-empty"><h3>还没有邮件。</h3><p>刷新收件箱后，新邮件会显示在这里。</p></div> : <div className="mail-list public-mail-list">{messages.map((item) => <InlinePublicMailRow item={item} selected={selected} loading={messageLoading} error={messageError} method={method} onOpen={() => void openMessage(item)} onClose={closeMessage} onRetry={() => void openMessage(item)} onCopyCode={(code) => void copyCode(code)} key={`${item.folder}-${item.id}`} />)}</div>}
+        {messages.length > 0 && (page > 1 || hasMore) && <Pagination page={page} totalPages={page + (hasMore ? 1 : 0)} onChange={(nextPage) => void load(false, nextPage)} label="邮件分页" />}
       </>
       <p className="public-footnote">此链接仅限只读访问 · {expiresAt ? `有效至 ${dateText(expiresAt)}` : '永久有效'}</p>
     </section>

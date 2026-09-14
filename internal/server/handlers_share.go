@@ -128,24 +128,46 @@ func (s *Server) publicShareInbox(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 30
+	}
+	fetchLimit := page*limit + 1
 
-	method, messages, err := s.readInbox(sh.AccountID, sh.Alias, limit, days, "auto")
+	method, messages, err := s.readInbox(sh.AccountID, sh.Alias, fetchLimit, days, "auto")
 	if err != nil {
 		fail(c, http.StatusBadGateway, err.Error())
 		return
 	}
 	mail.SortMessagesNewest(messages)
+	hasMore := len(messages) > page*limit
+	start := (page - 1) * limit
+	if start > len(messages) {
+		start = len(messages)
+	}
+	end := start + limit
+	if end > len(messages) {
+		end = len(messages)
+	}
+	messages = messages[start:end]
 	for i := range messages {
+		messages[i].Preview = mail.NormalizePreviewText(messages[i].Preview)
 		messages[i].Code = mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview)
 		if messages[i].Preview == "" && messages[i].Code != "" {
 			messages[i].Preview = "已识别验证码：" + messages[i].Code
 		}
 	}
 	ok(c, gin.H{
-		"alias":    sh.Alias,
-		"count":    len(messages),
-		"messages": messages,
-		"method":   method,
+		"alias":     sh.Alias,
+		"count":     len(messages),
+		"page":      page,
+		"page_size": limit,
+		"has_more":  hasMore,
+		"messages":  messages,
+		"method":    method,
 	})
 }
 

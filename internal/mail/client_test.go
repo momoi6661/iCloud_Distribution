@@ -79,6 +79,17 @@ func TestPreviewFromRawDecodesQuotedPrintableFragment(t *testing.T) {
 	}
 }
 
+func TestNormalizePreviewTextDecodesICloudWebPreview(t *testing.T) {
+	encoded := "=E8=BE=93=E5=85=A5=E6=AD=A4=E4=B8=B4=E6=97=B6=E9=AA=8C=E8=AF=81=E7=A0=81=EF=BC=9A 539808"
+	got := NormalizePreviewText(encoded)
+	if got != "输入此临时验证码： 539808" {
+		t.Fatalf("NormalizePreviewText() = %q", got)
+	}
+	if code := ExtractVerificationCode(got); code != "539808" {
+		t.Fatalf("ExtractVerificationCode() = %q, want 539808", code)
+	}
+}
+
 func TestPreviewFromRawRemovesMultipartHeadersAndBoundary(t *testing.T) {
 	raw := "--_NmP-7192ffa6f6d1a458-Part_1\r\n" +
 		"Content-Type: text/plain; charset=utf-8\r\n" +

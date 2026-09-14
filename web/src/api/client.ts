@@ -80,6 +80,9 @@ export interface InboxData {
   count: number
   method: MailReadMethod
   messages: MailMessage[]
+  page?: number
+  page_size?: number
+  has_more?: boolean
 }
 
 export interface FullMailMessage extends MailMessage {
@@ -214,10 +217,10 @@ export const api = {
   batchDeleteShares: (tokens: string[]) => request<BatchShareResult>('POST', '/api/shares/batch/delete', { tokens }),
 
   publicShareInfo: (token: string) => request<{ alias: string; label?: string; created_at: string; expires_at?: string }>('GET', `/api/public/share/${token}`),
-  publicShareInbox: (token: string, limit = 30, days = 7) => request<{ alias: string; count: number; method: MailReadMethod; messages: MailMessage[] }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}&refresh=${Date.now()}`),
+  publicShareInbox: (token: string, limit = 30, days = 7, page = 1) => request<{ alias: string; count: number; method: MailReadMethod; messages: MailMessage[]; page?: number; page_size?: number; has_more?: boolean }>('GET', `/api/public/share/${token}/inbox?limit=${limit}&days=${days}&page=${page}&refresh=${Date.now()}`),
   publicShareMessage: (token: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/public/share/${token}/message?uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
 
-  inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto') => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&method=${encodeURIComponent(method)}`),
+  inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto', page = 1) => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&page=${page}&method=${encodeURIComponent(method)}`),
   inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
   getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
   deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
