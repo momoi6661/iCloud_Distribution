@@ -737,7 +737,7 @@ export default function AccountDetailPage({
   };
   useEffect(() => {
     localStorage.setItem("mail-auto-refresh-ms", String(autoRefreshMs));
-    if (tab !== "inbox" || autoRefreshMs === 0 || !alias) return undefined;
+    if (tab !== "inbox" || autoRefreshMs === 0) return undefined;
     let timer: number | undefined;
     const schedule = () => {
       timer = window.setTimeout(async () => {
