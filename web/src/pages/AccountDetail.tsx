@@ -310,7 +310,7 @@ function InlineMailRow({
         </div>
         <div>
           <strong>{item.subject || "（无主题）"}</strong>
-          <span>{item.from}</span>
+          <span className="mail-route">发件人：{item.from || "未知"}{item.to ? ` · 收件人：${item.to}` : ""}</span>
           {item.preview && <small>{item.preview}</small>}
           {item.code && (
             <button
@@ -449,6 +449,7 @@ export default function AccountDetailPage({
   const messageRequest = useRef(0);
   const inboxRequest = useRef(0);
   const autoRefreshRunning = useRef(false);
+  const deletingMessages = useRef(new Set<string>());
   const [shareOpen, setShareOpen] = useState(false);
   const [shareAlias, setShareAlias] = useState("");
   const [shareLabel, setShareLabel] = useState("");
@@ -703,7 +704,7 @@ export default function AccountDetailPage({
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
       if (request === inboxRequest.current) {
-        setInbox(normalized);
+        setInbox({ ...normalized, messages: normalized.messages.filter((item) => !deletingMessages.current.has(mailKey(item))) });
         setInboxCount(normalized.count);
         setSelectedMessages([]);
       }
@@ -726,7 +727,7 @@ export default function AccountDetailPage({
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
       if (request === inboxRequest.current) {
-        setInbox(normalized);
+        setInbox({ ...normalized, messages: normalized.messages.filter((item) => !deletingMessages.current.has(mailKey(item))) });
         setInboxCount(normalized.count);
       }
     } catch (e) {
@@ -782,21 +783,22 @@ export default function AccountDetailPage({
   };
   const deleteMessage = async () => {
     if (!message || !inbox || inbox.method === "web_api") return;
-    setBusy(true);
+    const target = message;
+    const targetKey = mailKey(target);
+    deletingMessages.current.add(targetKey);
+    setInbox((current) => current ? { ...current, messages: current.messages.filter((item) => mailKey(item) !== targetKey) } : current);
+    setSelectedMessages((current) => current.filter((key) => key !== targetKey));
+    setMessage(null);
+    setMessageDeleteConfirm(false);
+    setNotice("正在从邮箱服务器删除邮件…");
     try {
-      await api.deleteMessage(id, message.id, message.folder, inbox.method);
-      setInbox((current) =>
-        current
-          ? { ...current, messages: current.messages.filter((item) => item.id !== message.id) }
-          : current,
-      );
-      setMessage(null);
-      setMessageDeleteConfirm(false);
-      setNotice("邮件已删除。 ");
+      await api.deleteMessage(id, target.id, target.folder, inbox.method);
+      setNotice("邮件已删除。");
     } catch (e) {
+      setInbox((current) => current ? { ...current, messages: newestFirst([...current.messages.filter((item) => mailKey(item) !== targetKey), target]) } : current);
       setNotice(`删除邮件失败：${errorText(e)}`);
     } finally {
-      setBusy(false);
+      deletingMessages.current.delete(targetKey);
     }
   };
   const toggleMessageSelection = (item: MailMessage) => {
@@ -813,7 +815,12 @@ export default function AccountDetailPage({
     const targets = inbox.messages.filter((item) =>
       selectedMessages.includes(mailKey(item)),
     );
-    setBusy(true);
+    const targetKeys = new Set(targets.map(mailKey));
+    targetKeys.forEach((key) => deletingMessages.current.add(key));
+    setInbox((current) => current ? { ...current, messages: current.messages.filter((item) => !targetKeys.has(mailKey(item))) } : current);
+    setSelectedMessages([]);
+    setMessageBatchDeleteConfirm(false);
+    setNotice(`正在从邮箱服务器删除 ${targets.length} 封邮件…`);
     try {
       const results = await Promise.allSettled(
         targets.map((item) =>
@@ -826,27 +833,15 @@ export default function AccountDetailPage({
           .map(mailKey),
       );
       const failed = targets.length - deleted.size;
-      setInbox((current) =>
-        current
-          ? {
-              ...current,
-              messages: current.messages.filter(
-                (item) => !deleted.has(mailKey(item)),
-              ),
-            }
-          : current,
-      );
-      setSelectedMessages((current) =>
-        current.filter((key) => !deleted.has(key)),
-      );
-      setMessageBatchDeleteConfirm(false);
+      const failedMessages = targets.filter((item) => !deleted.has(mailKey(item)));
+      if (failedMessages.length) setInbox((current) => current ? { ...current, messages: newestFirst([...current.messages, ...failedMessages]) } : current);
       setNotice(
         failed
           ? `已删除 ${deleted.size} 封，${failed} 封删除失败。`
           : `已删除 ${deleted.size} 封邮件。`,
       );
     } finally {
-      setBusy(false);
+      targetKeys.forEach((key) => deletingMessages.current.delete(key));
     }
   };
   const toggleAlias = async (item: Alias) => {

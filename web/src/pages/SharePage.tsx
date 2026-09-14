@@ -35,7 +35,7 @@ function InlinePublicMailRow({ item, selected, loading, error, method, onOpen, o
       <div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div>
       <div>
         <strong>{item.subject || '（无主题）'}</strong>
-        <span>{item.from}</span>
+        <span className="mail-route">发件人：{item.from || '未知'}{item.to ? ` · 收件人：${item.to}` : ''}</span>
         {item.preview && <small>{item.preview}</small>}
         {item.code && <button type="button" className="mail-code-button" onClick={(event) => { event.stopPropagation(); onCopyCode(item.code || '') }} aria-label={`复制验证码 ${item.code}`} title="点击复制验证码"><span>验证码：{item.code}</span><Icon name="copy" size={16} /></button>}
       </div>
