@@ -227,6 +227,7 @@ export const api = {
 
   createShare: (accountId: string, alias: string, label: string, expiresMinutes: number) => request<{ token: string; url: string; alias: string; created_at: string; expires_at?: string }>('POST', '/api/aliases/share', { account_id: accountId, alias, label, expires_minutes: expiresMinutes }),
   listShares: (accountId: string) => request<ShareLink[]>('GET', `/api/shares?account_id=${encodeURIComponent(accountId)}`),
+  updateShare: (token: string, label: string) => request<ShareLink>('PUT', `/api/shares/${token}`, { label }),
   deleteShare: (token: string) => request('DELETE', `/api/shares/${token}`),
   batchDeleteShares: (tokens: string[]) => request<BatchShareResult>('POST', '/api/shares/batch/delete', { tokens }),
 

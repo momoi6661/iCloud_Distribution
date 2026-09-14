@@ -115,6 +115,7 @@ func (s *Server) register() {
 		// ===== 别名分享链接 (管理) =====
 		authed.POST("/aliases/share", s.createShare)
 		authed.GET("/shares", s.listShares)
+		authed.PUT("/shares/:token", s.updateShare)
 		authed.DELETE("/shares/:token", s.deleteShare)
 		authed.POST("/shares/batch/delete", s.batchDeleteShares)
 

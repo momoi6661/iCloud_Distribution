@@ -164,6 +164,7 @@ function ShareRows({
   selectedShares,
   onToggle,
   onCopy,
+  onEdit,
   onDelete,
   onDisable,
 }: {
@@ -171,6 +172,7 @@ function ShareRows({
   selectedShares: string[];
   onToggle: (token: string) => void;
   onCopy: (item: ShareLink) => void;
+  onEdit: (item: ShareLink) => void;
   onDelete: (item: ShareLink) => void;
   onDisable: (alias: string) => void;
 }) {
@@ -223,6 +225,13 @@ function ShareRows({
                     </span>
                   </div>
                   <div>
+                    <button
+                      className="button small secondary"
+                      onClick={() => onEdit(item)}
+                    >
+                      <Icon name="settings" size={15} />
+                      编辑备注
+                    </button>
                     <button
                       className="button small secondary"
                       onClick={() => onCopy(item)}
@@ -474,6 +483,8 @@ export default function AccountDetailPage({
   const [shareFilter, setShareFilter] = useState<ShareFilter>("all");
   const [selectedShares, setSelectedShares] = useState<string[]>([]);
   const [shareDeleteConfirm, setShareDeleteConfirm] = useState(false);
+  const [shareEditTarget, setShareEditTarget] = useState<ShareLink | null>(null);
+  const [shareEditLabel, setShareEditLabel] = useState("");
 
   const visibleInboxMessages = useMemo(() => {
     const normalized = inboxQuery.trim().toLocaleLowerCase();
@@ -1217,6 +1228,25 @@ export default function AccountDetailPage({
       `${window.location.origin}/share/${item.token}`,
     );
     setNotice("分享链接已复制。");
+  };
+  const openShareEditor = (item: ShareLink) => {
+    setShareEditTarget(item);
+    setShareEditLabel(item.label || "");
+  };
+  const saveShareLabel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!shareEditTarget) return;
+    setBusy(true);
+    try {
+      const updated = await api.updateShare(shareEditTarget.token, shareEditLabel);
+      setShares((current) => current.map((item) => item.token === updated.token ? updated : item));
+      setShareEditTarget(null);
+      setNotice("分享链接备注已保存。");
+    } catch (e) {
+      setNotice(`保存分享链接备注失败：${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
   };
   const toggleShareSelection = (token: string) =>
     setSelectedShares((current) =>
@@ -1989,6 +2019,7 @@ export default function AccountDetailPage({
                   selectedShares={selectedShares}
                   onToggle={toggleShareSelection}
                   onCopy={copyShare}
+                  onEdit={openShareEditor}
                   onDisable={(email) => {
                     const item = aliases.find(
                       (candidate) => candidate.email === email,
@@ -2201,12 +2232,12 @@ export default function AccountDetailPage({
           />
           <label className="field">
             <span>
-              链接标签 <small>可选</small>
+              链接备注 <small>可选</small>
             </span>
             <input
               value={shareLabel}
               onChange={(event) => setShareLabel(event.target.value)}
-              placeholder="例如：供应商收件箱"
+              placeholder="写下分享对象或使用场景"
             />
           </label>
           <div className="field">
@@ -2448,6 +2479,33 @@ export default function AccountDetailPage({
           </div>
         </div>
       </Dialog>{" "}
+      <Dialog
+        open={shareEditTarget !== null}
+        title="修改分享备注"
+        onClose={() => !busy && setShareEditTarget(null)}
+      >
+        <form className="dialog-body" onSubmit={saveShareLabel}>
+          <p className="dialog-lead">
+            备注只用于区分分享链接，不会改变链接地址、有效期或邮箱备注。
+          </p>
+          <p className="editor-address mono">{shareEditTarget?.alias}</p>
+          <label className="field">
+            <span>链接备注</span>
+            <input
+              value={shareEditLabel}
+              onChange={(event) => setShareEditLabel(event.target.value)}
+              placeholder="写下分享对象或使用场景"
+              maxLength={200}
+              autoFocus
+            />
+            <small>留空后将显示为“未命名链接”。</small>
+          </label>
+          <div className="dialog-actions">
+            <button type="button" className="button secondary" disabled={busy} onClick={() => setShareEditTarget(null)}>取消</button>
+            <button type="submit" className="button primary" disabled={busy}>{busy ? "保存中…" : "保存备注"}</button>
+          </div>
+        </form>
+      </Dialog>
       <Dialog
         open={createdAlias !== ""}
         title="邮箱已创建"

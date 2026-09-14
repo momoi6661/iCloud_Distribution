@@ -27,6 +27,10 @@ type batchDeleteSharesReq struct {
 	Tokens []string `json:"tokens" binding:"required"`
 }
 
+type updateShareReq struct {
+	Label string `json:"label"`
+}
+
 // createShare 为别名创建 (或复用) 分享链接。
 //
 //	POST /api/aliases/share  body: {"account_id": "...", "alias": "x@icloud.com", "label": "..."}
@@ -73,12 +77,33 @@ func (s *Server) listShares(c *gin.Context) {
 	ok(c, filtered)
 }
 
+// updateShare 修改分享链接的管理备注，不改变链接地址和有效期。
+func (s *Server) updateShare(c *gin.Context) {
+	token := c.Param("token")
+	var req updateShareReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		return
+	}
+	sh, exists := s.shares.GetAny(token)
+	if !exists || sh.OwnerUserID != currentIdentity(c).ID {
+		fail(c, http.StatusNotFound, "分享不存在")
+		return
+	}
+	updated, err := s.shares.UpdateLabel(token, req.Label)
+	if err != nil {
+		fail(c, http.StatusBadRequest, "修改分享备注失败: "+err.Error())
+		return
+	}
+	ok(c, updated)
+}
+
 // deleteShare 吊销分享链接。
 //
 //	DELETE /api/shares/:token
 func (s *Server) deleteShare(c *gin.Context) {
 	token := c.Param("token")
-	if sh, exists := s.shares.Get(token); !exists || sh.OwnerUserID != currentIdentity(c).ID {
+	if sh, exists := s.shares.GetAny(token); !exists || sh.OwnerUserID != currentIdentity(c).ID {
 		fail(c, http.StatusNotFound, "分享不存在")
 		return
 	}
@@ -101,7 +126,7 @@ func (s *Server) batchDeleteShares(c *gin.Context) {
 		return
 	}
 	for _, token := range req.Tokens {
-		sh, exists := s.shares.Get(token)
+		sh, exists := s.shares.GetAny(token)
 		if !exists || sh.OwnerUserID != currentIdentity(c).ID {
 			fail(c, http.StatusNotFound, "分享不存在")
 			return

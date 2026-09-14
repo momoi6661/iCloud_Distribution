@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -129,6 +130,40 @@ func (s *Store) Get(token string) (*Share, bool) {
 	}
 	cp := *sh
 	return &cp, true
+}
+
+// GetAny returns a stored share for management operations, including expired links.
+func (s *Store) GetAny(token string) (*Share, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh, ok := s.shares[token]
+	if !ok {
+		return nil, false
+	}
+	cp := *sh
+	return &cp, true
+}
+
+// UpdateLabel updates the management note without changing the token or expiry.
+func (s *Store) UpdateLabel(token, label string) (*Share, error) {
+	label = strings.TrimSpace(label)
+	if len(label) > 200 {
+		return nil, fmt.Errorf("分享备注不能超过 200 个字符")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh, ok := s.shares[token]
+	if !ok {
+		return nil, fmt.Errorf("分享不存在")
+	}
+	previous := sh.Label
+	sh.Label = label
+	if err := s.save(); err != nil {
+		sh.Label = previous
+		return nil, err
+	}
+	cp := *sh
+	return &cp, nil
 }
 
 // List 返回指定账号的全部分享 (accountID 为空则返回全部)。

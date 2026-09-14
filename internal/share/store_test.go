@@ -68,6 +68,21 @@ func TestStore_Persistence(t *testing.T) {
 	}
 }
 
+func TestStore_UpdateLabel(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewStore(dir)
+	sh, _ := s.Create("acc_1", "a@icloud.com", "旧备注")
+	updated, err := s.UpdateLabel(sh.Token, "  新备注  ")
+	if err != nil || updated.Label != "新备注" {
+		t.Fatalf("UpdateLabel = %+v, %v", updated, err)
+	}
+	reloaded, _ := NewStore(dir)
+	got, ok := reloaded.GetAny(sh.Token)
+	if !ok || got.Label != "新备注" {
+		t.Fatalf("重新加载后的备注 = %+v", got)
+	}
+}
+
 func TestStore_List(t *testing.T) {
 	s, _ := NewStore(t.TempDir())
 	s.Create("acc_1", "a@icloud.com", "")
