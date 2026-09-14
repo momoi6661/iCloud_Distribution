@@ -1303,42 +1303,52 @@ export default function AccountDetailPage({
           <button
             className="button small secondary"
             onClick={() => openAliasEditor(item)}
+            aria-label={`编辑 ${item.email}`}
+            title="编辑名称、分组和备注"
           >
             <Icon name="settings" size={15} />
-            归类与备注
+            <span className="alias-action-label">编辑</span>
           </button>
           {!disabled && (
             <>
               <button
                 className="button small secondary"
                 onClick={() => openInbox(item.email)}
+                aria-label={`查看 ${item.email} 的收件箱`}
+                title="收件箱"
               >
                 <Icon name="mail" size={15} />
-                收件箱
+                <span className="alias-action-label">收件箱</span>
               </button>
               <button
                 className="button small secondary"
+                aria-label={`复制 ${item.email}`}
+                title="复制邮箱"
                 onClick={() => {
                   navigator.clipboard.writeText(item.email);
                   setNotice("别名已复制。");
                 }}
               >
                 <Icon name="copy" size={15} />
-                复制
+                <span className="alias-action-label">复制</span>
               </button>
               <button
                 className="button small secondary"
                 onClick={() => openSharePanel(item.email)}
+                aria-label={`分享 ${item.email}`}
+                title="创建分享链接"
               >
                 <Icon name="link" size={15} />
-                分享
+                <span className="alias-action-label">分享</span>
               </button>
               <button
                 className="button small alias-disable-action"
                 onClick={() => toggleAlias(item)}
+                aria-label={`停用 ${item.email}`}
+                title="停用邮箱"
               >
                 <Icon name="archive" size={15} />
-                停用
+                <span className="alias-action-label">停用</span>
               </button>
             </>
           )}
@@ -1347,16 +1357,20 @@ export default function AccountDetailPage({
               <button
                 className="button small secondary"
                 onClick={() => restoreDisabled(item)}
+                aria-label={`恢复 ${item.email}`}
+                title="恢复邮箱"
               >
                 <Icon name="restore" size={15} />
-                恢复
+                <span className="alias-action-label">恢复</span>
               </button>
               <button
                 className="button small alias-delete-action"
                 onClick={() => setDeleteTarget(item)}
+                aria-label={`删除 ${item.email}`}
+                title="删除邮箱"
               >
                 <Icon name="trash" size={15} />
-                删除
+                <span className="alias-action-label">删除</span>
               </button>
             </>
           )}

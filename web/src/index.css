@@ -483,10 +483,13 @@ h1, h2, h3, strong { font-weight: 650; }
   .inline-mail-detail-head .inline-actions .button { flex: 1 1 140px; }
   .inline-mail-body { padding: 18px 16px 28px; font-size: 15px; line-height: 1.8; }
   .alias-main > .mono { font-size: 15px; }
-  .alias-row { display: grid; grid-template-columns: 32px 3px minmax(0, 1fr); column-gap: 8px; }
-  .alias-row .alias-main { min-width: 0; }
-  .alias-row .alias-actions, .alias-row > .status { grid-column: 3; }
-  .alias-row .alias-actions { justify-content: flex-start; }
+  .alias-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 8px; row-gap: 8px; }
+  .alias-row .alias-select { grid-column: 1; grid-row: 1; }
+  .alias-row .alias-main { grid-column: 2; grid-row: 1; min-width: 0; }
+  .alias-row .alias-actions, .alias-row > .status { grid-column: 2; }
+  .alias-row .alias-actions { width: auto; justify-content: flex-start; gap: 6px; }
+  .alias-row .alias-actions .button.small { width: 44px; min-width: 44px; padding: 0; }
+  .alias-action-label { display: none; }
   .mail-row .mail-code-button, .public-mail-row .mail-code-button { min-height: 44px; font-size: 17px; }
   .public-header-actions { flex-wrap: wrap; justify-content: flex-end; }
   .public-theme-toggle { min-height: 44px; }
