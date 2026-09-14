@@ -416,7 +416,7 @@ h1, h2, h3, strong { font-weight: 650; }
 .share-row > div:last-child .text-button:hover { background: var(--ink-800); }
 
 /* Final responsive corrections: readable mail details and purposeful code action. */
-.alias-main > .mono { font-size: 14px; line-height: 1.45; }
+.alias-main > .mono { font-size: 16px; line-height: 1.45; font-weight: 700; overflow-wrap: anywhere; }
 .mail-code-button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; margin-top: 7px; padding: 0 11px; color: var(--mint); background: var(--mint-wash); border: 1px solid rgba(125,226,178,.28); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: .02em; }
 .mail-code-button:hover { color: var(--mint-bright); background: var(--ink-800); border-color: var(--mint); }
 .mail-code-button:active { transform: translateY(1px); }
