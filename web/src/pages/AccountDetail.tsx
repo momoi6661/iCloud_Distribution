@@ -48,24 +48,38 @@ const copyCode = async (code: string, setNotice: (value: string) => void) => {
 };
 const urlPattern = /(https?:\/\/[^\s<]+)/g;
 function MailBody({ text }: { text: string }) {
+  const paragraphs = text.replace(/\r\n?/g, "\n").split(/\n{2,}/);
   return (
-    <>
-      {text.split(urlPattern).map((part, index) => {
-        if (!/^https?:\/\//i.test(part)) return <span key={index}>{part}</span>;
-        const match = part.match(/^(.*?)([),.;!?，。；！）]*)$/);
-        const url = match?.[1] || part;
-        const suffix = match?.[2] || "";
-        return (
-          <span key={index}>
-            <a href={url} target="_blank" rel="noreferrer">
-              {url}
-            </a>
-            {suffix}
-          </span>
-        );
-      })}
-    </>
+    <div className="mail-body-content">
+      {paragraphs.map((paragraph, paragraphIndex) => (
+        <p
+          className={paragraph.split("\n").every((line) => line.trim().startsWith(">")) ? "mail-quote" : ""}
+          key={paragraphIndex}
+        >
+          {paragraph.split("\n").map((line, lineIndex) => (
+            <span key={lineIndex}>
+              {line.split(urlPattern).map((part, index) => {
+                if (!/^https?:\/\//i.test(part)) return <span key={index}>{part}</span>;
+                const match = part.match(/^(.*?)([),.;!?，。；！）]*)$/);
+                const url = match?.[1] || part;
+                const suffix = match?.[2] || "";
+                return (
+                  <span key={index}>
+                    <a href={url} target="_blank" rel="noreferrer">{url}</a>
+                    {suffix}
+                  </span>
+                );
+              })}
+              {lineIndex < paragraph.split("\n").length - 1 && <br />}
+            </span>
+          ))}
+        </p>
+      ))}
+    </div>
   );
+}
+function mailKey(item: Pick<MailMessage, "id" | "folder">) {
+  return `${item.folder || "INBOX"}:${item.id}`;
 }
 const countCacheKey = (accountId: string, email: string) =>
   `${accountId}\n${email}`;
@@ -220,6 +234,7 @@ function ShareRows({
 function InlineMailRow({
   item,
   selected,
+  checked,
   loading,
   error,
   method,
@@ -228,9 +243,11 @@ function InlineMailRow({
   onRetry,
   onCopyCode,
   onDelete,
+  onToggle,
 }: {
   item: MailMessage;
   selected: FullMailMessage | null;
+  checked: boolean;
   loading: boolean;
   error: string;
   method: MailReadPreference;
@@ -239,12 +256,13 @@ function InlineMailRow({
   onRetry: () => void;
   onCopyCode: (code: string) => void;
   onDelete: () => void;
+  onToggle: () => void;
 }) {
   const expanded = selected?.id === item.id && selected.folder === item.folder;
   return (
     <div className={`mail-item ${expanded ? "expanded" : ""}`}>
       <div
-        className={`mail-row mail-row-button ${expanded ? "selected" : ""}`}
+        className={`mail-row mail-row-button ${expanded ? "selected" : ""} ${method !== "web_api" ? "has-selection" : ""}`}
         onClick={onOpen}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -256,6 +274,19 @@ function InlineMailRow({
         tabIndex={0}
         aria-expanded={expanded}
       >
+        {method !== "web_api" && (
+          <input
+            className="mail-select"
+            type="checkbox"
+            checked={checked}
+            aria-label={`选择邮件：${item.subject || "无主题"}`}
+            onChange={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          />
+        )}
         <div className="mail-avatar">
           {(item.from || "?").slice(0, 1).toUpperCase()}
         </div>
@@ -288,7 +319,7 @@ function InlineMailRow({
               <span className="eyebrow">邮件正文</span>
               <h3>{selected.subject || "（无主题）"}</h3>
               <p>
-                {selected.from} · {dateText(selected.date)}
+                发件人：{selected.from} · 收件人：{selected.to || "未知"} · {dateText(selected.date)}
               </p>
             </div>
             <div className="inline-actions">
@@ -389,6 +420,9 @@ export default function AccountDetailPage({
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState("");
   const [messageDeleteConfirm, setMessageDeleteConfirm] = useState(false);
+  const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
+  const [messageBatchDeleteConfirm, setMessageBatchDeleteConfirm] =
+    useState(false);
   const messageRequest = useRef(0);
   const inboxRequest = useRef(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -443,6 +477,7 @@ export default function AccountDetailPage({
         if (request === inboxRequest.current) {
           setInbox(normalized);
           setInboxCount(normalized.count);
+          setSelectedMessages([]);
         }
       })
       .catch((e) => {
@@ -643,6 +678,7 @@ export default function AccountDetailPage({
       if (request === inboxRequest.current) {
         setInbox(normalized);
         setInboxCount(normalized.count);
+        setSelectedMessages([]);
       }
     } catch (e) {
       if (request === inboxRequest.current) setNotice((e as Error).message);
@@ -697,6 +733,56 @@ export default function AccountDetailPage({
       setNotice("邮件已删除。 ");
     } catch (e) {
       setNotice(`删除邮件失败：${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleMessageSelection = (item: MailMessage) => {
+    const key = mailKey(item);
+    setSelectedMessages((current) =>
+      current.includes(key)
+        ? current.filter((itemKey) => itemKey !== key)
+        : [...current, key],
+    );
+  };
+  const deleteSelectedMessages = async () => {
+    if (!inbox || inbox.method === "web_api" || !selectedMessages.length)
+      return;
+    const targets = inbox.messages.filter((item) =>
+      selectedMessages.includes(mailKey(item)),
+    );
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        targets.map((item) =>
+          api.deleteMessage(id, item.id, item.folder, inbox.method),
+        ),
+      );
+      const deleted = new Set(
+        targets
+          .filter((_, index) => results[index].status === "fulfilled")
+          .map(mailKey),
+      );
+      const failed = targets.length - deleted.size;
+      setInbox((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.filter(
+                (item) => !deleted.has(mailKey(item)),
+              ),
+            }
+          : current,
+      );
+      setSelectedMessages((current) =>
+        current.filter((key) => !deleted.has(key)),
+      );
+      setMessageBatchDeleteConfirm(false);
+      setNotice(
+        failed
+          ? `已删除 ${deleted.size} 封，${failed} 封删除失败。`
+          : `已删除 ${deleted.size} 封邮件。`,
+      );
     } finally {
       setBusy(false);
     }
@@ -1543,10 +1629,57 @@ export default function AccountDetailPage({
             ) : (
               <div className="inbox-split">
                 <div className="mail-list inbox-mail-list">
+                  {inbox.method !== "web_api" && (
+                    <div className="mail-batch-toolbar">
+                      <label className="mail-select-all">
+                        <input
+                          type="checkbox"
+                          checked={
+                            inbox.messages.length > 0 &&
+                            inbox.messages.every((item) =>
+                              selectedMessages.includes(mailKey(item)),
+                            )
+                          }
+                          onChange={(event) =>
+                            setSelectedMessages(
+                              event.target.checked
+                                ? inbox.messages.map(mailKey)
+                                : [],
+                            )
+                          }
+                        />
+                        <span>
+                          {selectedMessages.length
+                            ? `已选 ${selectedMessages.length} 封`
+                            : "选择邮件"}
+                        </span>
+                      </label>
+                      {selectedMessages.length > 0 && (
+                        <>
+                          <button
+                            className="text-button danger-text"
+                            type="button"
+                            onClick={() => setMessageBatchDeleteConfirm(true)}
+                          >
+                            <Icon name="trash" size={15} />
+                            批量删除
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => setSelectedMessages([])}
+                          >
+                            清除选择
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {inbox.messages.map((item) => (
                     <InlineMailRow
                       item={item}
                       selected={message}
+                      checked={selectedMessages.includes(mailKey(item))}
                       loading={messageLoading}
                       error={messageError}
                       method={inbox.method}
@@ -1555,6 +1688,7 @@ export default function AccountDetailPage({
                       onRetry={() => void openMessage(item)}
                       onCopyCode={(code) => void copyCode(code, setNotice)}
                       onDelete={() => setMessageDeleteConfirm(true)}
+                      onToggle={() => toggleMessageSelection(item)}
                       key={`${item.folder}-${item.id}`}
                     />
                   ))}
@@ -2128,6 +2262,25 @@ export default function AccountDetailPage({
           <div className="dialog-actions">
             <button className="button secondary" onClick={() => setMessageDeleteConfirm(false)}>取消</button>
             <button className="button danger" disabled={busy} onClick={deleteMessage}>{busy ? "删除中…" : "确认删除"}</button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog
+        open={messageBatchDeleteConfirm}
+        title="批量删除邮件？"
+        onClose={() => setMessageBatchDeleteConfirm(false)}
+      >
+        <div className="dialog-body">
+          <div className="dialog-warning destructive">
+            <Icon name="trash" size={20} />
+            <div>
+              <strong>此操作无法撤销。</strong>
+              <p>将从当前 IMAP 收件箱中永久删除所选的 {selectedMessages.length} 封邮件。</p>
+            </div>
+          </div>
+          <div className="dialog-actions">
+            <button className="button secondary" onClick={() => setMessageBatchDeleteConfirm(false)}>取消</button>
+            <button className="button danger" disabled={busy} onClick={deleteSelectedMessages}>{busy ? "删除中…" : "确认删除"}</button>
           </div>
         </div>
       </Dialog>
