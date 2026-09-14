@@ -4,6 +4,7 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"icloud_distribution/internal/account"
@@ -68,11 +69,11 @@ func (s *Server) createAlias(c *gin.Context) {
 	}
 
 	ok(c, gin.H{
-		"email":      result.Email,
+		"email":        result.Email,
 		"anonymous_id": anonymousID,
-		"label":      result.Label,
-		"created_at": result.CreatedAt,
-		"account_id": req.AccountID,
+		"label":        result.Label,
+		"created_at":   result.CreatedAt,
+		"account_id":   req.AccountID,
 	})
 }
 
@@ -142,12 +143,12 @@ func (s *Server) batchCreateAliases(c *gin.Context) {
 	_ = s.mgr.SaveCookies(id, client.Cookies)
 
 	ok(c, gin.H{
-		"account_id": id,
-		"requested":  req.Count,
-		"succeeded":  succeeded,
-		"failed":     len(results) - succeeded,
+		"account_id":  id,
+		"requested":   req.Count,
+		"succeeded":   succeeded,
+		"failed":      len(results) - succeeded,
 		"interrupted": len(results) < req.Count,
-		"results":    results,
+		"results":     results,
 	})
 }
 
@@ -156,7 +157,8 @@ func (s *Server) batchCreateAliases(c *gin.Context) {
 // ====================================================================
 
 // setForwardTo 修改 HME 转发目标邮箱 (账号级,影响全部别名)。
-//   POST /api/accounts/:id/forward-to  body: {"email": "muskzhou@icloud.com"}
+//
+//	POST /api/accounts/:id/forward-to  body: {"email": "muskzhou@icloud.com"}
 func (s *Server) setForwardTo(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
@@ -275,4 +277,49 @@ func (s *Server) deleteAlias(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"anonymous_id": anonymousID})
+}
+
+type batchDeleteAliasesReq struct {
+	AccountID string   `json:"account_id" binding:"required"`
+	IDs       []string `json:"ids" binding:"required"`
+}
+
+// batchDeleteAliases 批量删除隐藏邮箱。HME 客户端会在需要时先停用再删除，
+// 单个失败不会中断其余项，并把每项结果返回给界面。
+func (s *Server) batchDeleteAliases(c *gin.Context) {
+	var req batchDeleteAliasesReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		fail(c, http.StatusBadRequest, "参数错误: account_id 和 ids 必填")
+		return
+	}
+	client, err := s.mgr.HMEClient(req.AccountID, false)
+	if err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	type result struct {
+		ID      string `json:"id"`
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+	}
+	results := make([]result, 0, len(req.IDs))
+	deleted := 0
+	seen := map[string]bool{}
+	for _, rawID := range req.IDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		item := result{ID: id}
+		if deleteErr := client.Delete(id); deleteErr != nil {
+			item.Error = deleteErr.Error()
+		} else {
+			item.Success = true
+			deleted++
+		}
+		results = append(results, item)
+	}
+	_ = s.mgr.SaveCookies(req.AccountID, client.Cookies)
+	ok(c, gin.H{"requested": len(results), "deleted": deleted, "failed": len(results) - deleted, "results": results})
 }

@@ -415,6 +415,33 @@ h1, h2, h3, strong { font-weight: 650; }
 .share-row > div:last-child .button:hover,
 .share-row > div:last-child .text-button:hover { background: var(--ink-800); }
 
+/* Final responsive corrections: readable mail details and purposeful code action. */
+.alias-main > .mono { font-size: 14px; line-height: 1.45; }
+.mail-code-button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; margin-top: 7px; padding: 0 11px; color: var(--mint); background: var(--mint-wash); border: 1px solid rgba(125,226,178,.28); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+.mail-code-button:hover { color: var(--mint-bright); background: var(--ink-800); border-color: var(--mint); }
+.mail-code-button:active { transform: translateY(1px); }
+.inline-mail-body a { color: var(--mint); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; word-break: break-word; }
+.danger-outline { color: var(--coral); border-color: rgba(236,141,134,.28); background: transparent; }
+.danger-outline:hover { color: var(--coral); background: #ec8d8614; }
+.public-header-actions { display: flex; align-items: center; gap: 8px; }
+.public-theme-toggle { min-height: 40px; padding-inline: 11px; font-size: 12px; }
+.active-alias-toolbar { margin-top: 0; }
+@media (max-width: 720px) {
+  .inline-mail-detail-head { flex-direction: column; gap: 12px; }
+  .inline-mail-detail-head > div:first-child { width: 100%; min-width: 0; }
+  .inline-mail-detail-head .inline-actions { width: 100%; display: flex; flex-wrap: wrap; }
+  .inline-mail-detail-head .inline-actions .button { flex: 1 1 140px; }
+  .inline-mail-body { padding: 18px 16px 28px; font-size: 15px; line-height: 1.8; }
+  .alias-main > .mono { font-size: 15px; }
+  .alias-row { display: grid; grid-template-columns: 32px 3px minmax(0, 1fr); column-gap: 8px; }
+  .alias-row .alias-main { min-width: 0; }
+  .alias-row .alias-actions, .alias-row > .status { grid-column: 3; }
+  .alias-row .alias-actions { justify-content: flex-start; }
+  .mail-code-button { max-width: 100%; font-size: 16px; }
+  .public-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .public-theme-toggle { min-height: 44px; }
+}
+
 /* Keep account status and mail configuration in two deliberate rows. */
 .detail-state {
   display: grid;

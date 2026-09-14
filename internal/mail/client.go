@@ -684,6 +684,30 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	return full, nil
 }
 
+// DeleteMessage marks one IMAP message as deleted and expunges it from the
+// selected mailbox. UID is scoped to folder, so callers must keep both values.
+func (c *Client) DeleteMessage(uid uint32, folder string) error {
+	if c.cli == nil {
+		return fmt.Errorf("未连接")
+	}
+	if folder == "" {
+		folder = "INBOX"
+	}
+	if _, err := c.cli.Select(folder, false); err != nil {
+		return err
+	}
+	seqset := new(imap.SeqSet)
+	seqset.AddNum(uid)
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	if err := c.cli.UidStore(seqset, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
+		return fmt.Errorf("标记邮件删除失败: %w", err)
+	}
+	if err := c.cli.Expunge(nil); err != nil {
+		return fmt.Errorf("彻底删除邮件失败: %w", err)
+	}
+	return nil
+}
+
 type selectedBodyPart struct {
 	path        []int
 	contentType string

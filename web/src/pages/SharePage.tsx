@@ -2,12 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, type FullMailMessage, type MailMessage, type MailReadMethod } from '../api/client'
 import Icon from '../components/Icon'
+import { getInitialTheme, persistTheme, type ThemeMode } from '../theme'
 
 const dateText = (date?: string) => date ? new Date(date).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+const urlPattern = /(https?:\/\/[^\s<]+)/g
+function MailBody({ text }: { text: string }) {
+  return <>{text.split(urlPattern).map((part, index) => {
+    if (!/^https?:\/\//i.test(part)) return <span key={index}>{part}</span>
+    const match = part.match(/^(.*?)([),.;!?，。；！）]*)$/)
+    const url = match?.[1] || part
+    return <span key={index}><a href={url} target="_blank" rel="noreferrer">{url}</a>{match?.[2] || ''}</span>
+  })}</>
+}
 
 function InlinePublicMailRow({ item, selected, loading, error, method, onOpen, onClose, onRetry, onCopyCode }: { item: MailMessage; selected: FullMailMessage | null; loading: boolean; error: string; method: MailReadMethod; onOpen: () => void; onClose: () => void; onRetry: () => void; onCopyCode: (code: string) => void }) {
   const expanded = selected?.id === item.id && (!selected.folder || selected.folder === item.folder)
-  return <div className={`mail-item ${expanded ? 'expanded' : ''}`}><button className={`mail-row mail-row-button public-mail-row ${expanded ? 'selected' : ''}`} onClick={onOpen} aria-expanded={expanded}><div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div><div><strong>{item.subject || '（无主题）'}</strong><span>{item.from}</span>{item.preview && <small>{item.preview}</small>}{item.code && <small className="mail-code-hint">验证码：{item.code}</small>}</div><time>{dateText(item.date)}</time></button>{expanded && <div className="inline-mail-detail public-inline-mail-detail" aria-live="polite"><div className="inline-mail-detail-head"><div><span className="eyebrow">邮件正文</span><h2>{selected.subject || '（无主题）'}</h2><p>{selected.from} · {dateText(selected.date)}</p></div><div className="inline-actions"><button className="button small secondary" onClick={onClose}>收起</button>{selected.code && <button className="button small secondary" onClick={() => onCopyCode(selected.code || '')}><Icon name="copy" size={15} />复制验证码</button>}</div></div>{loading ? <div className="inbox-reader-state" role="status"><span className="message-loading-bar" /><strong>正在读取正文</strong></div> : error ? <div className="inbox-reader-state error-state" role="alert"><strong>正文读取失败</strong><small>{error}</small><button className="button secondary" onClick={onRetry}>重新读取</button></div> : method === 'web_api' ? <div className="inline-mail-body">{selected.preview || '这封邮件没有可显示的摘要。'}</div> : <div className="inline-mail-body">{selected.body || '这封邮件没有可显示的正文。'}</div>}</div>}</div>
+  return <div className={`mail-item ${expanded ? 'expanded' : ''}`}><button className={`mail-row mail-row-button public-mail-row ${expanded ? 'selected' : ''}`} onClick={onOpen} aria-expanded={expanded}><div className="mail-avatar">{(item.from || '?').slice(0, 1).toUpperCase()}</div><div><strong>{item.subject || '（无主题）'}</strong><span>{item.from}</span>{item.preview && <small>{item.preview}</small>}{item.code && <span role="button" tabIndex={0} className="mail-code-button" onClick={(event) => { event.stopPropagation(); onCopyCode(item.code || '') }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onCopyCode(item.code || '') } }} aria-label={`复制验证码 ${item.code}`}><span>验证码：{item.code}</span><Icon name="copy" size={16} /></span>}</div><time>{dateText(item.date)}</time></button>{expanded && <div className="inline-mail-detail public-inline-mail-detail" aria-live="polite"><div className="inline-mail-detail-head"><div><span className="eyebrow">邮件正文</span><h2>{selected.subject || '（无主题）'}</h2><p>{selected.from} · {dateText(selected.date)}</p></div><div className="inline-actions"><button className="button small secondary" onClick={onClose}>收起</button>{selected.code && <button className="button small secondary" onClick={() => onCopyCode(selected.code || '')}><Icon name="copy" size={15} />复制验证码</button>}</div></div>{loading ? <div className="inbox-reader-state" role="status"><span className="message-loading-bar" /><strong>正在读取正文</strong></div> : error ? <div className="inbox-reader-state error-state" role="alert"><strong>正文读取失败</strong><small>{error}</small><button className="button secondary" onClick={onRetry}>重新读取</button></div> : method === 'web_api' ? <div className="inline-mail-body"><MailBody text={selected.preview || '这封邮件没有可显示的摘要。'} /></div> : <div className="inline-mail-body"><MailBody text={selected.body || '这封邮件没有可显示的正文。'} /></div>}</div>}</div>
 }
 
 export default function SharePage() {
@@ -22,6 +32,7 @@ export default function SharePage() {
   const [loading, setLoading] = useState(true)
   const [messageLoading, setMessageLoading] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
+  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const messageRequest = useRef(0)
 
   const load = async () => {
@@ -80,7 +91,7 @@ export default function SharePage() {
 
   return <main className="public-share">
     {copyNotice && <div className="notice toast" role="status" aria-live="polite"><span>{copyNotice}</span><button className="text-button" onClick={() => setCopyNotice('')}>关闭</button></div>}
-    <header className="public-header"><span className="auth-brand">iCloud 邮箱共享</span><span className="status status-ready">只读访问</span></header>
+    <header className="public-header"><span className="auth-brand">iCloud 邮箱共享</span><div className="public-header-actions"><span className="status status-ready">只读访问</span><button className="button secondary public-theme-toggle" type="button" onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); persistTheme(next) }} aria-label={`切换到${theme === 'dark' ? '浅色' : '深色'}`}>切换到{theme === 'dark' ? '浅色' : '深色'}</button></div></header>
     <section className="public-card panel">
       <>
         <div className="public-card-header"><div className="public-share-heading"><span className="eyebrow">共享收件箱</span><div className="public-alias-line"><h1>{alias || '共享邮箱'}</h1>{alias && <button className="icon-button copy-alias-button" aria-label="复制邮箱地址" title="复制邮箱地址" onClick={() => void copyAlias()}><Icon name="copy" size={17} /></button>}</div><p className="public-identity">此地址仅用于接收邮件，内容不会被修改或转发。</p></div><button className="icon-button share-refresh-button" aria-label={loading ? '正在刷新邮件' : '刷新邮件列表'} title={loading ? '正在刷新邮件' : '刷新邮件列表'} onClick={() => void load()} disabled={loading}><Icon name="refresh" size={18} /></button></div>

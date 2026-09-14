@@ -144,6 +144,13 @@ export interface BatchShareResult {
   not_found: number
 }
 
+export interface BatchAliasResult {
+  requested: number
+  deleted: number
+  failed: number
+  results: { id: string; success: boolean; error?: string }[]
+}
+
 export interface OrganizerGroup {
   id: string
   name: string
@@ -198,6 +205,7 @@ export const api = {
   deactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/deactivate`, { account_id: accountId }),
   reactivateAlias: (accountId: string, anonymousId: string) => request('POST', `/api/aliases/${anonymousId}/reactivate`, { account_id: accountId }),
   deleteAlias: (accountId: string, anonymousId: string) => request('DELETE', `/api/aliases/${anonymousId}`, { account_id: accountId }),
+  batchDeleteAliases: (accountId: string, ids: string[]) => request<BatchAliasResult>('POST', '/api/aliases/batch/delete', { account_id: accountId, ids }),
   setForwardTo: (accountId: string, email: string) => request('POST', `/api/accounts/${accountId}/forward-to`, { email }),
 
   createShare: (accountId: string, alias: string, label: string, expiresMinutes: number) => request<{ token: string; url: string; alias: string; created_at: string; expires_at?: string }>('POST', '/api/aliases/share', { account_id: accountId, alias, label, expires_minutes: expiresMinutes }),
@@ -212,5 +220,6 @@ export const api = {
   inbox: (accountId: string, alias: string, limit = 20, days = 7, method: MailReadPreference = 'auto') => request<InboxData>('GET', `/api/inbox?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&limit=${limit}&days=${days}&method=${encodeURIComponent(method)}`),
   inboxCount: (accountId: string, alias: string, days = 7) => request<{ account_id: string; alias: string; count: number }>('GET', `/api/inbox/count?account_id=${encodeURIComponent(accountId)}&alias=${encodeURIComponent(alias)}&days=${days}`),
   getMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request<FullMailMessage>('GET', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
+  deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method']) => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}`),
 	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
 }

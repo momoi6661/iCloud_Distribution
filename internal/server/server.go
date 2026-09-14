@@ -101,6 +101,7 @@ func (s *Server) register() {
 		authed.POST("/aliases/:id/deactivate", s.deactivateAlias)
 		authed.POST("/aliases/:id/reactivate", s.reactivateAlias)
 		authed.DELETE("/aliases/:id", s.deleteAlias)
+		authed.POST("/aliases/batch/delete", s.batchDeleteAliases)
 
 		// ===== 别名分享链接 (管理) =====
 		authed.POST("/aliases/share", s.createShare)
@@ -112,6 +113,7 @@ func (s *Server) register() {
 		authed.GET("/inbox", s.listInbox)
 		authed.GET("/inbox/count", s.inboxCount)
 		authed.GET("/inbox/message", s.getMessage)
+		authed.DELETE("/inbox/message", s.deleteMessage)
 
 		// ===== 系统 =====
 		authed.POST("/reload", s.reloadConfig)

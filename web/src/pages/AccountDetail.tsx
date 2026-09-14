@@ -46,6 +46,27 @@ const copyCode = async (code: string, setNotice: (value: string) => void) => {
     setNotice("验证码复制失败，请手动选择复制。");
   }
 };
+const urlPattern = /(https?:\/\/[^\s<]+)/g;
+function MailBody({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(urlPattern).map((part, index) => {
+        if (!/^https?:\/\//i.test(part)) return <span key={index}>{part}</span>;
+        const match = part.match(/^(.*?)([),.;!?，。；！）]*)$/);
+        const url = match?.[1] || part;
+        const suffix = match?.[2] || "";
+        return (
+          <span key={index}>
+            <a href={url} target="_blank" rel="noreferrer">
+              {url}
+            </a>
+            {suffix}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 const countCacheKey = (accountId: string, email: string) =>
   `${accountId}\n${email}`;
 const cachedInboxCount = (accountId: string, email: string) => {
@@ -206,6 +227,7 @@ function InlineMailRow({
   onClose,
   onRetry,
   onCopyCode,
+  onDelete,
 }: {
   item: MailMessage;
   selected: FullMailMessage | null;
@@ -216,6 +238,7 @@ function InlineMailRow({
   onClose: () => void;
   onRetry: () => void;
   onCopyCode: (code: string) => void;
+  onDelete: () => void;
 }) {
   const expanded = selected?.id === item.id && selected.folder === item.folder;
   return (
@@ -241,21 +264,19 @@ function InlineMailRow({
           <span>{item.from}</span>
           {item.preview && <small>{item.preview}</small>}
           {item.code && (
-            <small className="mail-code-line">
-              <span className="mail-code-hint">验证码：{item.code}</span>
-              <button
-                className="icon-button mail-code-copy"
-                type="button"
-                aria-label={`复制验证码 ${item.code}`}
-                title="复制验证码"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCopyCode(item.code || "");
-                }}
-              >
-                <Icon name="copy" size={14} />
-              </button>
-            </small>
+            <button
+              className="mail-code-button"
+              type="button"
+              aria-label={`复制验证码 ${item.code}`}
+              title="点击复制验证码"
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopyCode(item.code || "");
+              }}
+            >
+              <span>验证码：{item.code}</span>
+              <Icon name="copy" size={16} />
+            </button>
           )}
         </div>
         <time>{dateText(item.date)}</time>
@@ -283,6 +304,10 @@ function InlineMailRow({
                   复制验证码
                 </button>
               )}
+              <button className="button small danger-outline" onClick={onDelete}>
+                <Icon name="trash" size={15} />
+                删除邮件
+              </button>
             </div>
           </div>
           {loading ? (
@@ -300,11 +325,11 @@ function InlineMailRow({
             </div>
           ) : method === "web_api" ? (
             <div className="inline-mail-body">
-              {selected.preview || "这封邮件没有可显示的摘要。"}
+              <MailBody text={selected.preview || "这封邮件没有可显示的摘要。"} />
             </div>
           ) : (
             <div className="inline-mail-body">
-              {selected.body || "这封邮件没有可显示的正文。"}
+              <MailBody text={selected.body || "这封邮件没有可显示的正文。"} />
             </div>
           )}
         </div>
@@ -340,7 +365,9 @@ export default function AccountDetailPage({
   const [label, setLabel] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const [aliasPage, setAliasPage] = useState(1);
+  const [selectedActive, setSelectedActive] = useState<string[]>([]);
   const [selectedDisabled, setSelectedDisabled] = useState<string[]>([]);
+  const [activeDeleteConfirm, setActiveDeleteConfirm] = useState(false);
   const [disabledDeleteConfirm, setDisabledDeleteConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -361,6 +388,7 @@ export default function AccountDetailPage({
   const [message, setMessage] = useState<FullMailMessage | null>(null);
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState("");
+  const [messageDeleteConfirm, setMessageDeleteConfirm] = useState(false);
   const messageRequest = useRef(0);
   const inboxRequest = useRef(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -534,6 +562,16 @@ export default function AccountDetailPage({
     disabledAliases.every((item) =>
       selectedDisabled.includes(item.anonymousId),
     );
+  const allActiveSelected =
+    activeAliases.length > 0 &&
+    activeAliases.every((item) => selectedActive.includes(item.anonymousId));
+  useEffect(() => {
+    setSelectedActive((current) =>
+      current.filter((selectedId) =>
+        activeAliases.some((item) => item.anonymousId === selectedId),
+      ),
+    );
+  }, [activeAliases]);
   useEffect(() => {
     setAliasPage(1);
   }, [aliases, groupFilter, metadata, query, tab]);
@@ -644,6 +682,25 @@ export default function AccountDetailPage({
     setMessageError("");
     setMessageLoading(false);
   };
+  const deleteMessage = async () => {
+    if (!message || !inbox || inbox.method === "web_api") return;
+    setBusy(true);
+    try {
+      await api.deleteMessage(id, message.id, message.folder, inbox.method);
+      setInbox((current) =>
+        current
+          ? { ...current, messages: current.messages.filter((item) => item.id !== message.id) }
+          : current,
+      );
+      setMessage(null);
+      setMessageDeleteConfirm(false);
+      setNotice("邮件已删除。 ");
+    } catch (e) {
+      setNotice(`删除邮件失败：${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const toggleAlias = async (item: Alias) => {
     setBusy(true);
     try {
@@ -682,6 +739,38 @@ export default function AccountDetailPage({
         ? current.filter((item) => item !== aliasId)
         : [...current, aliasId],
     );
+  const toggleActiveSelection = (aliasId: string) =>
+    setSelectedActive((current) =>
+      current.includes(aliasId)
+        ? current.filter((item) => item !== aliasId)
+        : [...current, aliasId],
+    );
+  const toggleAllActive = () =>
+    setSelectedActive(
+      allActiveSelected ? [] : activeAliases.map((item) => item.anonymousId),
+    );
+  const deleteSelectedActive = async () => {
+    if (!selectedActive.length) return;
+    setBusy(true);
+    try {
+      const result = await api.batchDeleteAliases(id, selectedActive);
+      const deleted = new Set(
+        result.results.filter((item) => item.success).map((item) => item.id),
+      );
+      setAliases((current) =>
+        current.filter((item) => !deleted.has(item.anonymousId)),
+      );
+      setSelectedActive([]);
+      setActiveDeleteConfirm(false);
+      setNotice(
+        `已删除 ${result.deleted} 个邮箱${result.failed ? `，${result.failed} 个失败` : ""}。`,
+      );
+    } catch (e) {
+      setNotice(`批量删除邮箱失败：${errorText(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const toggleAllDisabled = () =>
     setSelectedDisabled(
       allDisabledSelected
@@ -1001,16 +1090,22 @@ export default function AccountDetailPage({
         key={item.anonymousId}
         style={{ animationDelay: `${index * 35}ms` }}
       >
-        {disabled && (
-          <label className="checkbox-hit alias-select">
-            <input
-              type="checkbox"
-              aria-label={`选择 ${item.email}`}
-              checked={selectedDisabled.includes(item.anonymousId)}
-              onChange={() => toggleDisabledSelection(item.anonymousId)}
-            />
-          </label>
-        )}
+        <label className="checkbox-hit alias-select">
+          <input
+            type="checkbox"
+            aria-label={`选择 ${item.email}`}
+            checked={
+              disabled
+                ? selectedDisabled.includes(item.anonymousId)
+                : selectedActive.includes(item.anonymousId)
+            }
+            onChange={() =>
+              disabled
+                ? toggleDisabledSelection(item.anonymousId)
+                : toggleActiveSelection(item.anonymousId)
+            }
+          />
+        </label>
         <span className={`alias-state ${item.active ? "on" : "off"}`} />
         <div className="alias-main">
           <strong className="mono">{item.email}</strong>
@@ -1340,6 +1435,27 @@ export default function AccountDetailPage({
                 )}
               </div>
             )}
+            {tab === "aliases" && (
+              <div className="disabled-alias-toolbar active-alias-toolbar">
+                <label className="checkbox-hit">
+                  <input
+                    type="checkbox"
+                    aria-label="全选活跃别名"
+                    checked={allActiveSelected}
+                    onChange={toggleAllActive}
+                  />
+                </label>
+                <span>{selectedActive.length ? `已选 ${selectedActive.length} 个` : "选择邮箱"}</span>
+                {selectedActive.length > 0 && (
+                  <>
+                    <button className="danger-ghost" onClick={() => setActiveDeleteConfirm(true)}>
+                      <Icon name="trash" size={15} />批量删除
+                    </button>
+                    <button className="text-button" onClick={() => setSelectedActive([])}>清除选择</button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="alias-list">
               {aliasesLoading ? (
                 <div className="alias-skeleton-list" role="status">
@@ -1438,6 +1554,7 @@ export default function AccountDetailPage({
                       onClose={closeMessage}
                       onRetry={() => void openMessage(item)}
                       onCopyCode={(code) => void copyCode(code, setNotice)}
+                      onDelete={() => setMessageDeleteConfirm(true)}
                       key={`${item.folder}-${item.id}`}
                     />
                   ))}
@@ -1973,6 +2090,44 @@ export default function AccountDetailPage({
             >
               {busy ? "删除中…" : "确认删除"}
             </button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog
+        open={activeDeleteConfirm}
+        title="删除所选邮箱？"
+        onClose={() => setActiveDeleteConfirm(false)}
+      >
+        <div className="dialog-body">
+          <div className="dialog-warning destructive">
+            <Icon name="trash" size={20} />
+            <div>
+              <strong>此操作无法撤销。</strong>
+              <p>将永久删除所选的 {selectedActive.length} 个隐藏邮箱。</p>
+            </div>
+          </div>
+          <div className="dialog-actions">
+            <button className="button secondary" onClick={() => setActiveDeleteConfirm(false)}>取消</button>
+            <button className="button danger" disabled={busy} onClick={deleteSelectedActive}>{busy ? "删除中…" : "确认删除"}</button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog
+        open={messageDeleteConfirm}
+        title="删除这封邮件？"
+        onClose={() => setMessageDeleteConfirm(false)}
+      >
+        <div className="dialog-body">
+          <div className="dialog-warning destructive">
+            <Icon name="trash" size={20} />
+            <div>
+              <strong>此操作无法撤销。</strong>
+              <p>邮件会从当前 IMAP 收件箱中永久删除。</p>
+            </div>
+          </div>
+          <div className="dialog-actions">
+            <button className="button secondary" onClick={() => setMessageDeleteConfirm(false)}>取消</button>
+            <button className="button danger" disabled={busy} onClick={deleteMessage}>{busy ? "删除中…" : "确认删除"}</button>
           </div>
         </div>
       </Dialog>

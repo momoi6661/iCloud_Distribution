@@ -220,3 +220,39 @@ func (s *Server) getMessage(c *gin.Context) {
 	}
 	ok(c, full)
 }
+
+func (s *Server) deleteMessage(c *gin.Context) {
+	accountID := c.Query("account_id")
+	uidStr := c.Query("uid")
+	source := c.Query("source")
+	if accountID == "" || uidStr == "" {
+		fail(c, http.StatusBadRequest, "参数缺失: account_id, uid")
+		return
+	}
+	if source == "web_api" {
+		fail(c, http.StatusBadRequest, "Web API 模式不能删除邮件，请切换到 IMAP")
+		return
+	}
+	uid64, err := strconv.ParseUint(uidStr, 10, 32)
+	if err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: uid 必须是数字")
+		return
+	}
+	var mc *mail.Client
+	var unlock interface{ Unlock() }
+	if source == "forward_imap" {
+		mc, unlock, _, err = s.mgr.AcquireForwardIMAP(accountID)
+	} else {
+		mc, unlock, err = s.mgr.AcquireIMAP(accountID)
+	}
+	if err != nil {
+		fail(c, http.StatusBadRequest, "删除邮件需要可用的 IMAP 配置: "+err.Error())
+		return
+	}
+	defer unlock.Unlock()
+	if err := mc.DeleteMessage(uint32(uid64), c.Query("folder")); err != nil {
+		fail(c, http.StatusBadGateway, "删除邮件失败: "+err.Error())
+		return
+	}
+	ok(c, gin.H{"uid": uidStr, "folder": c.Query("folder")})
+}
