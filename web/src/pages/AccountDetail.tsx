@@ -47,7 +47,10 @@ const copyCode = async (code: string, setNotice: (value: string) => void) => {
   }
 };
 const urlPattern = /(https?:\/\/[^\s<]+)/g;
-function MailBody({ text }: { text: string }) {
+function MailBody({ text, html = false }: { text: string; html?: boolean }) {
+  if (html && text.trim()) {
+    return <div className="mail-body-html" dangerouslySetInnerHTML={{ __html: text }} />;
+  }
   const paragraphs = text.replace(/\r\n?/g, "\n").split(/\n{2,}/);
   return (
     <div className="mail-body-content">
@@ -360,7 +363,7 @@ function InlineMailRow({
             </div>
           ) : (
             <div className="inline-mail-body">
-              <MailBody text={selected.body || "这封邮件没有可显示的正文。"} />
+              <MailBody text={selected.body || "这封邮件没有可显示的正文。"} html={selected.content_type === "text/html"} />
             </div>
           )}
         </div>

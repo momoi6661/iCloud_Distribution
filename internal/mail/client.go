@@ -678,6 +678,11 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.EqualFold(part.contentType, "text/html") {
+		if raw, rawErr := decodeRawTextBody(bodyMessage.GetBody(section), part.encoding, part.charset); rawErr == nil {
+			body = sanitizeHTML(raw)
+		}
+	}
 	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
 	full.Folder = folder
 	full.Code = ExtractVerificationCode(full.Subject + "\n" + full.Body)
@@ -1063,6 +1068,17 @@ func readTextPart(ct, encoding string, r io.Reader) (string, error) {
 }
 
 func decodeTextBody(r io.Reader, contentType, encoding, bodyCharset string) (string, error) {
+	raw, err := decodeRawTextBody(r, encoding, bodyCharset)
+	if err != nil {
+		return "", err
+	}
+	if strings.EqualFold(contentType, "text/html") {
+		return stripHTML(raw), nil
+	}
+	return raw, nil
+}
+
+func decodeRawTextBody(r io.Reader, encoding, bodyCharset string) (string, error) {
 	var decoded io.Reader = r
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "quoted-printable":
@@ -1080,9 +1096,6 @@ func decodeTextBody(r io.Reader, contentType, encoding, bodyCharset string) (str
 	raw, err := io.ReadAll(decoded)
 	if err != nil {
 		return "", err
-	}
-	if strings.EqualFold(contentType, "text/html") {
-		return stripHTML(string(raw)), nil
 	}
 	return string(raw), nil
 }
@@ -1121,6 +1134,74 @@ func decodePreviewBody(r io.Reader, contentType, encoding, bodyCharset string) (
 		text = string(runes[:240])
 	}
 	return text, nil
+}
+
+// sanitizeHTML 保留邮件常用排版标签，移除脚本、样式、事件属性和危险链接。
+func sanitizeHTML(source string) string {
+	doc, err := xhtml.Parse(strings.NewReader(source))
+	if err != nil {
+		return ""
+	}
+	allowed := map[string]bool{"html": true, "body": true, "p": true, "div": true, "br": true, "strong": true, "b": true, "em": true, "i": true, "u": true, "blockquote": true, "ul": true, "ol": true, "li": true, "h1": true, "h2": true, "h3": true, "h4": true, "pre": true, "code": true, "a": true, "table": true, "thead": true, "tbody": true, "tr": true, "th": true, "td": true, "span": true}
+	var render func(*xhtml.Node, *strings.Builder)
+	render = func(node *xhtml.Node, out *strings.Builder) {
+		switch node.Type {
+		case xhtml.TextNode:
+			out.WriteString(stdhtml.EscapeString(node.Data))
+		case xhtml.ElementNode:
+			name := strings.ToLower(node.Data)
+			if name == "script" || name == "style" || name == "iframe" || name == "object" || name == "embed" || name == "form" || name == "input" || name == "meta" || name == "link" {
+				return
+			}
+			if !allowed[name] || name == "html" || name == "body" {
+				for child := node.FirstChild; child != nil; child = child.NextSibling {
+					render(child, out)
+				}
+				return
+			}
+			out.WriteByte('<')
+			out.WriteString(name)
+			for _, attr := range node.Attr {
+				key := strings.ToLower(attr.Key)
+				value := strings.TrimSpace(attr.Val)
+				if (name == "a" && key == "href") || (name == "img" && key == "src") {
+					lower := strings.ToLower(value)
+					if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+						out.WriteByte(' ')
+						out.WriteString(key)
+						out.WriteString("=\"")
+						out.WriteString(stdhtml.EscapeString(value))
+						out.WriteString("\"")
+					}
+				} else if name == "img" && key == "alt" {
+					out.WriteString(" alt=\"")
+					out.WriteString(stdhtml.EscapeString(value))
+					out.WriteString("\"")
+				}
+			}
+			if name == "a" {
+				out.WriteString(" target=\"_blank\" rel=\"noopener noreferrer nofollow\"")
+			}
+			if name == "br" {
+				out.WriteString(" />")
+				return
+			}
+			out.WriteByte('>')
+			for child := node.FirstChild; child != nil; child = child.NextSibling {
+				render(child, out)
+			}
+			out.WriteString("</")
+			out.WriteString(name)
+			out.WriteByte('>')
+		case xhtml.DocumentNode:
+			for child := node.FirstChild; child != nil; child = child.NextSibling {
+				render(child, out)
+			}
+		}
+	}
+	var out strings.Builder
+	render(doc, &out)
+	return out.String()
 }
 
 // stripHTML 使用 HTML tokenizer 提取可读文本，忽略脚本/样式并保留块级换行。

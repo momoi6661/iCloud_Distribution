@@ -25,6 +25,15 @@ h1, h2, h3, strong { font-weight: 650; }
 .mail-body-content p:last-child { margin-bottom:0; }
 .mail-body-content .mail-quote { padding-left:12px; color:var(--text-3); border-left:2px solid var(--line); }
 .mail-body-content a { color:var(--mint); overflow-wrap:anywhere; word-break:break-word; }
+.mail-body-html { max-width:78ch; overflow-wrap:anywhere; word-break:break-word; }
+.mail-body-html p, .mail-body-html div { margin:0 0 16px; }
+.mail-body-html p:last-child, .mail-body-html div:last-child { margin-bottom:0; }
+.mail-body-html a { color:var(--mint); text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; word-break:break-word; }
+.mail-body-html table { display:block; max-width:100%; overflow-x:auto; border-collapse:collapse; }
+.mail-body-html th, .mail-body-html td { padding:6px 8px; border:1px solid var(--line); text-align:left; }
+.mail-body-html blockquote { margin:12px 0; padding-left:12px; color:var(--text-3); border-left:2px solid var(--line); }
+.mail-body-html pre, .mail-body-html code { max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; }
+.mail-body-html img, .mail-body-html iframe, .mail-body-html form { display:none; }
 .inline-mail-body { background:var(--ink-900); border-top:1px solid var(--line-soft); }
 .inline-mail-detail-head p { line-height:1.6; }
 @media (max-width:720px) {

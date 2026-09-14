@@ -175,3 +175,15 @@ func TestParseForwardedSummaryUsesHeadersWithoutReadingBody(t *testing.T) {
 		t.Fatalf("similar alias must not match, matches=%v err=%v", similar, err)
 	}
 }
+
+func TestSanitizeHTMLKeepsMailLayoutAndBlocksActiveContent(t *testing.T) {
+	got := sanitizeHTML(`<div><h2>验证码</h2><p>代码 <strong>482913</strong></p><a href="javascript:alert(1)">危险链接</a><a href="https://example.com">安全链接</a><script>steal()</script><img src="https://tracker.example/pixel" /></div>`)
+	if strings.Contains(got, "script") || strings.Contains(got, "steal") || strings.Contains(got, "tracker.example") || strings.Contains(got, "javascript:") {
+		t.Fatalf("active content was not removed: %s", got)
+	}
+	for _, want := range []string{"<h2>验证码</h2>", "<strong>482913</strong>", `href="https://example.com"`, `rel="noopener noreferrer nofollow"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("sanitized mail lost %q: %s", want, got)
+		}
+	}
+}
