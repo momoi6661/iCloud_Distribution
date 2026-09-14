@@ -149,6 +149,18 @@ func TestReadRenderableBodyPrefersNestedHTML(t *testing.T) {
 	}
 }
 
+func TestSanitizeDecodedHTMLBodyKeepsContent(t *testing.T) {
+	encoded := "<html><body><h2>=E4=BD=A0=E7=9A=84=E9=AA=8C=E8=AF=81=E7=A0=81</h2><strong>539808</strong></body></html>"
+	raw, err := decodeRawTextBody(strings.NewReader(encoded), "quoted-printable", "utf-8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := sanitizeHTML(raw)
+	if !strings.Contains(body, "你的验证码") || !strings.Contains(body, "539808") {
+		t.Fatalf("decoded HTML content was lost: %q", body)
+	}
+}
+
 func TestStripForwardedHeaderPreamble(t *testing.T) {
 	got := stripForwardedHeaderPreamble("Return-path: sender@example.com\nOriginal-Recipient: target@icloud.com\n\n你的验证码是 482913")
 	if got != "你的验证码是 482913" {

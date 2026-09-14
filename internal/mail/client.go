@@ -705,14 +705,22 @@ func (c *Client) GetFull(uid uint32, folder string) (*FullMessage, error) {
 	if bodyMessage == nil || bodyMessage.GetBody(section) == nil {
 		return c.getFullFromRaw(uid, folder, msg)
 	}
-	body, err := decodeTextBody(bodyMessage.GetBody(section), part.contentType, part.encoding, part.charset)
+	var body string
+	var err error
+	if strings.EqualFold(part.contentType, "text/html") {
+		var raw string
+		raw, err = decodeRawTextBody(bodyMessage.GetBody(section), part.encoding, part.charset)
+		if err == nil {
+			body = sanitizeHTML(raw)
+		}
+	} else {
+		body, err = decodeTextBody(bodyMessage.GetBody(section), part.contentType, part.encoding, part.charset)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(part.contentType, "text/html") {
-		if raw, rawErr := decodeRawTextBody(bodyMessage.GetBody(section), part.encoding, part.charset); rawErr == nil {
-			body = sanitizeHTML(raw)
-		}
+	if strings.TrimSpace(body) == "" {
+		return c.getFullFromRaw(uid, folder, msg)
 	}
 	full := &FullMessage{Message: toMessage(msg), Body: body, ContentType: part.contentType}
 	full.Folder = folder
