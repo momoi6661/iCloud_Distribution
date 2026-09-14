@@ -403,6 +403,7 @@ export default function AccountDetailPage({
   const [inbox, setInbox] = useState<InboxData | null>(null);
   const [inboxCount, setInboxCount] = useState<number | null>(null);
   const [inboxPage, setInboxPage] = useState(1);
+  const [inboxQuery, setInboxQuery] = useState("");
   const [groups, setGroups] = useState<OrganizerGroup[]>([]);
   const [metadata, setMetadata] = useState<Record<string, AliasMetadata>>({});
   const [aliasesLoading, setAliasesLoading] = useState(true);
@@ -461,6 +462,16 @@ export default function AccountDetailPage({
   const [shareFilter, setShareFilter] = useState<ShareFilter>("all");
   const [selectedShares, setSelectedShares] = useState<string[]>([]);
   const [shareDeleteConfirm, setShareDeleteConfirm] = useState(false);
+
+  const visibleInboxMessages = useMemo(() => {
+    const normalized = inboxQuery.trim().toLocaleLowerCase();
+    if (!normalized) return inbox?.messages || [];
+    return (inbox?.messages || []).filter((item) =>
+      [item.subject, item.from, item.to, item.preview, item.code, item.date]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase().includes(normalized)),
+    );
+  }, [inbox?.messages, inboxQuery]);
 
   const load = async () => {
     setBusy(true);
@@ -1657,6 +1668,18 @@ export default function AccountDetailPage({
                 <h2>{alias || "全部别名"}</h2>
               </div>
               <div className="inline-actions inbox-refresh-controls">
+                <label className="search-field inbox-list-search">
+                  <Icon name="search" size={16} />
+                  <input
+                    value={inboxQuery}
+                    onChange={(event) => {
+                      setInboxQuery(event.target.value);
+                      setSelectedMessages([]);
+                    }}
+                    placeholder="搜索当前列表"
+                    aria-label="搜索当前邮件列表"
+                  />
+                </label>
                 <SelectMenu
                   value={String(autoRefreshMs)}
                   className="auto-refresh-select"
@@ -1711,15 +1734,15 @@ export default function AccountDetailPage({
                         <input
                           type="checkbox"
                           checked={
-                            inbox.messages.length > 0 &&
-                            inbox.messages.every((item) =>
+                            visibleInboxMessages.length > 0 &&
+                            visibleInboxMessages.every((item) =>
                               selectedMessages.includes(mailKey(item)),
                             )
                           }
                           onChange={(event) =>
                             setSelectedMessages(
                               event.target.checked
-                                ? inbox.messages.map(mailKey)
+                                ? visibleInboxMessages.map(mailKey)
                                 : [],
                             )
                           }
@@ -1751,7 +1774,12 @@ export default function AccountDetailPage({
                       )}
                     </div>
                   )}
-                  {inbox.messages.map((item) => (
+                  {visibleInboxMessages.length === 0 && inboxQuery.trim() ? (
+                    <div className="empty-state small-empty inbox-search-empty">
+                      <h3>当前列表没有匹配邮件。</h3>
+                      <p>只搜索主题、发件人、收件人、摘要、验证码和时间，不搜索邮件正文。</p>
+                    </div>
+                  ) : visibleInboxMessages.map((item) => (
                     <InlineMailRow
                       item={item}
                       selected={message}
