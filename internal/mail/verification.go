@@ -32,6 +32,12 @@ type verificationCandidate struct {
 // ExtractVerificationCode selects a likely OTP by shape and context. Language
 // words are optional evidence, not a gate.
 func ExtractVerificationCode(text string) string {
+	// Full-message callers may pass rendered HTML. Never scan attributes,
+	// tracking URLs, CSS classes, or hidden template IDs as if they were mail
+	// content; only visible text is eligible for extraction.
+	if strings.Contains(text, "<") && strings.Contains(text, ">") {
+		text = stripHTML(text)
+	}
 	best := map[string]verificationCandidate{}
 	add := func(value string, score, index int) {
 		code := normalizeVerificationCode(value)
