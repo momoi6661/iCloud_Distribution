@@ -24,6 +24,9 @@ func TestExtractVerificationCode(t *testing.T) {
 		{"Reject ambiguous bare numbers", "记录 482913，项目 731864", ""},
 		{"Ignore HTML attributes and hidden template IDs", `<a href="https://example.test/U001?code=731864">确认邮箱</a><p>这封邮件没有验证码。</p>`, ""},
 		{"Read visible mixed code from HTML", `<div data-template="U001"><p>Use this verification code</p><strong>A7K92P</strong></div>`, "A7K92P"},
+		{"Reject hidden standalone template identifier", `<div style="display:none">U001</div><p>Please verify your email with the button below.</p>`, ""},
+		{"Reject unanchored one-letter reference", "Internal reference\nU001\nContinue with the link below", ""},
+		{"Keep explicitly labelled one-letter mixed code", "Your verification code is A1234", "A1234"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

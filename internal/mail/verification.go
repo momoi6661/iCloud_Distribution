@@ -78,7 +78,12 @@ func ExtractVerificationCode(text string) string {
 		}
 		value := text[match[4]:match[5]]
 		upper := strings.ToUpper(value)
-		if strings.ContainsAny(upper, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") && strings.ContainsAny(upper, "0123456789") {
+		// Unanchored one-letter identifiers such as U001, V2026, or R12345
+		// are overwhelmingly template/version/reference IDs. Real mixed OTPs
+		// without a recognizable language cue should have a stronger shape.
+		// Explicit keyword matches above remain permissive, so "code: A1234"
+		// still works when the sender labels it as a verification code.
+		if letters, digits := alnumCounts(upper); letters >= 2 && digits >= 2 {
 			add(value, genericCandidateScore(text, match[4], match[5], 35), match[4])
 		}
 	}
@@ -103,6 +108,18 @@ func ExtractVerificationCode(text string) string {
 		return ""
 	}
 	return candidates[0].code
+}
+
+func alnumCounts(value string) (letters, digits int) {
+	for _, char := range value {
+		switch {
+		case char >= 'A' && char <= 'Z':
+			letters++
+		case char >= '0' && char <= '9':
+			digits++
+		}
+	}
+	return letters, digits
 }
 
 func genericCandidateScore(text string, start, end, base int) int {
