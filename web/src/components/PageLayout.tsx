@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useIdentity } from '../auth-context'
@@ -11,17 +11,34 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
   const isDetail = location.pathname.startsWith('/accounts/')
   const active = isDetail ? 'accounts' : location.pathname === '/disabled' ? 'disabled' : 'accounts'
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const role = useIdentity()?.role || ''
   const toggleTheme = () => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); persistTheme(next) }
 
+  const closeMobileNav = () => setMobileNavOpen(false)
+
+  useEffect(() => {
+    document.body.classList.toggle('nav-open', mobileNavOpen)
+    return () => document.body.classList.remove('nav-open')
+  }, [mobileNavOpen])
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMobileNav()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [mobileNavOpen])
+
   const go = (path: string) => {
-    document.body.classList.remove('nav-open')
+    closeMobileNav()
     navigate(path)
   }
 
   const logout = async () => {
     await api.uiLogout().catch(() => undefined)
-    document.body.classList.remove('nav-open')
+    closeMobileNav()
     onLogout()
     navigate('/login')
   }
@@ -45,9 +62,17 @@ export default function PageLayout({ title, eyebrow = '操作台', children, onL
           <button className="nav-item logout-item" onClick={logout}><Icon name="logout" /><span>退出登录</span></button>
         </div>
       </aside>
+      {mobileNavOpen && (
+        <button
+          className="mobile-nav-dismiss"
+          type="button"
+          aria-label="关闭导航"
+          onClick={closeMobileNav}
+        />
+      )}
       <main className="main-shell">
         <header className="topbar">
-          <button className="mobile-menu" type="button" aria-label="打开导航" onClick={() => document.body.classList.toggle('nav-open')}><Icon name="menu" /></button>
+          <button className="mobile-menu" type="button" aria-label={mobileNavOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}><Icon name="menu" /></button>
           <div className="breadcrumb"><span>工作区</span><span className="breadcrumb-separator">/</span><strong>{title}</strong></div>
           <div className="topbar-actions"><button className="button secondary theme-trigger" type="button" aria-label={`切换到${theme === 'light' ? '深色' : '浅色'}`} onClick={toggleTheme}><Icon name="settings" size={16} /><span>切换到{theme === 'light' ? '深色' : '浅色'}</span></button></div>
         </header>
