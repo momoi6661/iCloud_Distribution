@@ -322,9 +322,33 @@ func (c *WebClient) search(payload string) ([]Message, error) {
 	return messages, nil
 }
 
-// ListInbox 列出收件箱邮件。
+// ListInbox 合并收件箱和垃圾邮件。隐藏邮箱邮件可能被 iCloud 误判为
+// 垃圾邮件，“全部邮箱”视图不能因此漏掉它们。
 func (c *WebClient) ListInbox(limit int) ([]Message, error) {
-	return c.ListFolder("INBOX", limit)
+	if limit <= 0 {
+		limit = 50
+	}
+	var out []Message
+	var lastErr error
+	for _, folder := range MailFolders {
+		messages, err := c.ListFolder(folder, limit)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		for i := range messages {
+			messages[i].Folder = folder
+		}
+		out = append(out, messages...)
+	}
+	SortMessagesNewest(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
 }
 
 // ListFolder 列出指定文件夹的邮件 (INBOX/Junk/Sent Messages/Trash 等)。

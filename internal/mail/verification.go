@@ -78,19 +78,18 @@ func ExtractVerificationCode(text string) string {
 		}
 		value := text[match[4]:match[5]]
 		upper := strings.ToUpper(value)
-		// Unanchored one-letter identifiers such as U001, V2026, or R12345
-		// are overwhelmingly template/version/reference IDs. Real mixed OTPs
-		// without a recognizable language cue should have a stronger shape.
-		// Explicit keyword matches above remain permissive, so "code: A1234"
-		// still works when the sender labels it as a verification code.
-		if letters, digits := alnumCounts(upper); letters >= 2 && digits >= 2 {
+		// Keep the fallback intentionally permissive: senders use many mixed
+		// formats, including a single letter plus digits. HTML attributes are
+		// already removed above, while explicit labels still receive priority.
+		if strings.ContainsAny(upper, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") && strings.ContainsAny(upper, "0123456789") {
 			add(value, genericCandidateScore(text, match[4], match[5], 35), match[4])
 		}
 	}
 
 	candidates := make([]verificationCandidate, 0, len(best))
 	for _, candidate := range best {
-		// Generic candidates below this floor are more likely metadata or IDs.
+		// Keep the existing confidence floor; mixed codes remain permissive in
+		// shape, while very short bare identifiers still need some context.
 		if candidate.score >= 45 {
 			candidates = append(candidates, candidate)
 		}
@@ -108,18 +107,6 @@ func ExtractVerificationCode(text string) string {
 		return ""
 	}
 	return candidates[0].code
-}
-
-func alnumCounts(value string) (letters, digits int) {
-	for _, char := range value {
-		switch {
-		case char >= 'A' && char <= 'Z':
-			letters++
-		case char >= '0' && char <= '9':
-			digits++
-		}
-	}
-	return letters, digits
 }
 
 func genericCandidateScore(text string, start, end, base int) int {

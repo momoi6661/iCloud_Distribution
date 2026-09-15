@@ -25,6 +25,7 @@ import { Dialog, SidePanel } from "../components/Overlay";
 type Tab = "aliases" | "disabled" | "inbox" | "shares";
 type ShareFilter = "all" | "active" | "expired";
 type RefreshInterval = 0 | 5000 | 15000 | 30000;
+type MailRangeDays = 0 | 7;
 const PAGE_SIZE = 20;
 const INBOX_COUNT_CACHE_MS = 60_000;
 const MAX_SHARE_EXPIRY_MINUTES = 5_256_000;
@@ -424,6 +425,7 @@ export default function AccountDetailPage({
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState(requestedAlias);
   const [mailMethod, setMailMethod] = useState<MailReadPreference>("auto");
+  const [mailRangeDays, setMailRangeDays] = useState<MailRangeDays>(7);
   const [autoRefreshMs, setAutoRefreshMs] = useState<RefreshInterval>(() => {
     const saved = Number(localStorage.getItem("mail-auto-refresh-ms"));
     return [0, 5000, 15000, 30000].includes(saved) ? (saved as RefreshInterval) : 0;
@@ -749,6 +751,7 @@ export default function AccountDetailPage({
     selectedAlias = "",
     preferredMethod: MailReadPreference = mailMethod,
     requestedPage = 1,
+    selectedDays: MailRangeDays = mailRangeDays,
   ) => {
     const request = ++inboxRequest.current;
     messageRequest.current += 1;
@@ -767,7 +770,7 @@ export default function AccountDetailPage({
     setBusy(true);
     try {
       const normalized = normalizeInbox(
-        await api.inbox(id, selectedAlias, 20, 7, preferredMethod, requestedPage),
+        await api.inbox(id, selectedAlias, 20, selectedDays, preferredMethod, requestedPage),
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
       if (request === inboxRequest.current) {
@@ -784,21 +787,24 @@ export default function AccountDetailPage({
   const refreshInbox = async (
     selectedAlias = alias,
     preferredMethod: MailReadPreference = mailMethod,
+    requestedPage = inboxPage,
+    selectedDays: MailRangeDays = mailRangeDays,
+    shouldApply: () => boolean = () => true,
   ) => {
     if (autoRefreshRunning.current) return;
     autoRefreshRunning.current = true;
     const request = ++inboxRequest.current;
     try {
       const normalized = normalizeInbox(
-        await api.inbox(id, selectedAlias, 20, 7, preferredMethod, inboxPage),
+        await api.inbox(id, selectedAlias, 20, selectedDays, preferredMethod, requestedPage),
       );
       rememberInboxCount(id, selectedAlias, normalized.count);
-      if (request === inboxRequest.current) {
+      if (shouldApply() && request === inboxRequest.current) {
         setInbox({ ...normalized, messages: normalized.messages.filter((item) => !deletingMessages.current.has(mailKey(item))) });
         setInboxCount(normalized.count);
       }
     } catch (e) {
-      if (request === inboxRequest.current) setNotice(`自动刷新失败：${errorText(e)}`);
+      if (shouldApply() && request === inboxRequest.current) setNotice(`自动刷新失败：${errorText(e)}`);
     } finally {
       autoRefreshRunning.current = false;
     }
@@ -807,15 +813,19 @@ export default function AccountDetailPage({
     localStorage.setItem("mail-auto-refresh-ms", String(autoRefreshMs));
     if (tab !== "inbox" || autoRefreshMs === 0) return undefined;
     let timer: number | undefined;
+    let cancelled = false;
     const schedule = () => {
       timer = window.setTimeout(async () => {
-        await refreshInbox(alias, mailMethod);
-        schedule();
+        await refreshInbox(alias, mailMethod, inboxPage, mailRangeDays, () => !cancelled);
+        if (!cancelled) schedule();
       }, autoRefreshMs);
     };
     schedule();
-    return () => { if (timer !== undefined) window.clearTimeout(timer); };
-  }, [alias, autoRefreshMs, inboxPage, mailMethod, tab]);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [alias, autoRefreshMs, inboxPage, mailMethod, mailRangeDays, tab]);
   const changeMailMethod = (value: string) => {
     const next = value as MailReadPreference;
     setMailMethod(next);
@@ -1316,7 +1326,7 @@ export default function AccountDetailPage({
     setNotice(messageText);
     void load().then(async () => {
       if (tab === "inbox")
-        setInbox(normalizeInbox(await api.inbox(id, alias, 20, 7, mailMethod, inboxPage)));
+        setInbox(normalizeInbox(await api.inbox(id, alias, 20, mailRangeDays, mailMethod, inboxPage)));
     });
   };
   const renderAliasRow = (item: Alias, index: number) => {
@@ -1775,6 +1785,20 @@ export default function AccountDetailPage({
                     aria-label="搜索当前邮件列表"
                   />
                 </label>
+                <SelectMenu
+                  value={String(mailRangeDays)}
+                  className="auto-refresh-select"
+                  ariaLabel="邮件时间范围"
+                  options={[
+                    { value: "7", label: "范围：近 7 天" },
+                    { value: "0", label: "范围：全部" },
+                  ]}
+                  onChange={(value) => {
+                    const next = Number(value) as MailRangeDays;
+                    setMailRangeDays(next);
+                    void openInbox(alias, mailMethod, 1, next);
+                  }}
+                />
                 <SelectMenu
                   value={String(autoRefreshMs)}
                   className="auto-refresh-select"

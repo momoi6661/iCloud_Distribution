@@ -512,7 +512,27 @@ func (c *Client) InboxCount() (int, error) {
 var MailFolders = []string{"INBOX", "Junk"}
 
 func (c *Client) ListInbox(limit int, days int) ([]Message, error) {
-	return c.ListFolder("INBOX", limit, days)
+	if limit <= 0 {
+		limit = 50
+	}
+	var out []Message
+	var lastErr error
+	for _, folder := range MailFolders {
+		messages, err := c.ListFolder(folder, limit, days)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		out = append(out, messages...)
+	}
+	SortMessagesNewest(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
+	}
+	return out, nil
 }
 
 // ListFolder 列出指定文件夹的邮件。

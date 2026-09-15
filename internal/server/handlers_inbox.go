@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"icloud_distribution/internal/mail"
@@ -26,7 +27,7 @@ func (s *Server) readInbox(accountID, alias string, limit, days int, preferred s
 	case "imap":
 		return s.readICloudIMAPInbox(accountID, alias, limit, days)
 	case "web_api":
-		return s.readWebInbox(accountID, alias, limit)
+		return s.readWebInbox(accountID, alias, limit, days)
 	case "", "auto":
 		// 继续自动选择。
 	default:
@@ -39,7 +40,7 @@ func (s *Server) readInbox(accountID, alias string, limit, days int, preferred s
 	if method, messages, err := s.readICloudIMAPInbox(accountID, alias, limit, days); err == nil {
 		return method, messages, nil
 	}
-	return s.readWebInbox(accountID, alias, limit)
+	return s.readWebInbox(accountID, alias, limit, days)
 }
 
 func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
@@ -104,7 +105,7 @@ func (s *Server) readICloudIMAPInbox(accountID, alias string, limit, days int) (
 	return "imap", messages, nil
 }
 
-func (s *Server) readWebInbox(accountID, alias string, limit int) (string, []mail.Message, error) {
+func (s *Server) readWebInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		wmc, err := s.mgr.WebMailClient(accountID)
@@ -118,6 +119,17 @@ func (s *Server) readWebInbox(accountID, alias string, limit int) (string, []mai
 			messages, err = wmc.ListInbox(limit)
 		}
 		if err == nil {
+			if days > 0 {
+				cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+				filtered := messages[:0]
+				for _, message := range messages {
+					if parsed, parseErr := time.Parse(time.RFC3339, message.Date); parseErr == nil && parsed.Before(cutoff) {
+						continue
+					}
+					filtered = append(filtered, message)
+				}
+				messages = filtered
+			}
 			s.mgr.CacheGateway(accountID, wmc.GatewayURL())
 			if messages == nil {
 				messages = []mail.Message{}
