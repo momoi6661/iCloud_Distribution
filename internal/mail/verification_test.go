@@ -25,6 +25,7 @@ func TestExtractVerificationCode(t *testing.T) {
 		{"Ignore HTML attributes and hidden template IDs", `<a href="https://example.test/U001?code=731864">确认邮箱</a><p>这封邮件没有验证码。</p>`, ""},
 		{"Read visible mixed code from HTML", `<div data-template="U001"><p>Use this verification code</p><strong>A7K92P</strong></div>`, "A7K92P"},
 		{"Keep explicitly labelled one-letter mixed code", "Your verification code is A1234", "A1234"},
+		{"Reject URL identifier", "Please verify your email with the button below. URL1083", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

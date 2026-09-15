@@ -677,7 +677,8 @@ func (c *Client) CountByRecipient(recipient string, days int) (int, error) {
 
 // findByRecipientInFolder 在单个文件夹内按收件人查找。
 func (c *Client) findByRecipientInFolder(folder, recipient string, limit int, days int) ([]Message, error) {
-	// 先尝试服务端 TO 搜索
+	// 指定别名只执行一次服务端 TO 搜索。列表没有匹配就直接返回空，
+	// 不再全文搜索或下载大量邮件做本地扫描，优先保证查询速度。
 	if _, err := c.cli.Select(folder, true); err != nil {
 		return nil, err
 	}
@@ -699,22 +700,10 @@ func (c *Client) findByRecipientInFolder(folder, recipient string, limit int, da
 		return msgs, nil
 	}
 
-	// fallback: 拉取后本地过滤
-	all, err := c.ListFolder(folder, limit*3, days)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return []Message{}, nil
 	}
-	recipient = strings.ToLower(recipient)
-	var out []Message
-	for _, m := range all {
-		if strings.Contains(strings.ToLower(m.To), recipient) {
-			out = append(out, m)
-			if len(out) >= limit {
-				break
-			}
-		}
-	}
-	return out, nil
+	return nil, err
 }
 
 func (c *Client) fetchByUIDs(uids []uint32, limit int) ([]Message, error) {

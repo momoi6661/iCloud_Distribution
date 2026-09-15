@@ -18,6 +18,7 @@ var (
 	alnumCandidatePattern = regexp.MustCompile(`(?i)(^|[^A-Z0-9])([A-Z0-9]{4,10})([^A-Z0-9]|$)`)
 	yearCode              = regexp.MustCompile(`^20[2-3]\d$`)
 	repeatedDigitCode     = regexp.MustCompile(`^(0{4,10}|1{4,10}|2{4,10}|3{4,10}|4{4,10}|5{4,10}|6{4,10}|7{4,10}|8{4,10}|9{4,10})$`)
+	technicalCodePrefix   = regexp.MustCompile(`^(?:URL|HTTP|HTTPS|ID|REF|VER|TEMPLATE|TOKEN)[A-Z0-9]*$`)
 	positiveContext       = regexp.MustCompile(`(?i)(verification|security|one[-\s]?time|passcode|otp|pin|code|验证码|校验码|动态码|安全码)`)
 	negativeContext       = regexp.MustCompile(`(?i)(order|invoice|receipt|amount|total|price|phone|telephone|mobile|tel|tracking|reference|transaction|address|date|year|订单|发票|金额|合计|价格|电话|手机|运单|编号|流水号|日期)`)
 	technicalWord         = regexp.MustCompile(`^(?:HTTP|HTML|UTF8|BASE64|TOKEN|LOGIN|EMAIL|OUTLOOK|MICROSOFT)$`)
@@ -78,10 +79,10 @@ func ExtractVerificationCode(text string) string {
 		}
 		value := text[match[4]:match[5]]
 		upper := strings.ToUpper(value)
-		// Keep the fallback intentionally permissive: senders use many mixed
-		// formats, including a single letter plus digits. HTML attributes are
-		// already removed above, while explicit labels still receive priority.
-		if strings.ContainsAny(upper, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") && strings.ContainsAny(upper, "0123456789") {
+		// Bare mixed values need a stronger shape because template and URL IDs
+		// frequently look like OTPs. Explicitly labelled codes above remain
+		// permissive and can still contain one letter plus digits.
+		if letters, digits := alnumCounts(upper); letters >= 2 && digits >= 2 && !technicalCodePrefix.MatchString(upper) {
 			add(value, genericCandidateScore(text, match[4], match[5], 35), match[4])
 		}
 	}
@@ -107,6 +108,33 @@ func ExtractVerificationCode(text string) string {
 		return ""
 	}
 	return candidates[0].code
+}
+
+// IsPlausibleVerificationCode validates a code extracted from a larger raw
+// message fragment. It prevents stale/template IDs from being surfaced when
+// the current visible preview contains no actual verification code.
+func IsPlausibleVerificationCode(value string) bool {
+	code := normalizeVerificationCode(value)
+	if code == "" {
+		return false
+	}
+	letters, digits := alnumCounts(code)
+	if strings.ContainsAny(code, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+		return letters >= 2 && digits >= 2 && !technicalCodePrefix.MatchString(code)
+	}
+	return digits >= 4
+}
+
+func alnumCounts(value string) (letters, digits int) {
+	for _, char := range value {
+		switch {
+		case char >= 'A' && char <= 'Z':
+			letters++
+		case char >= '0' && char <= '9':
+			digits++
+		}
+	}
+	return letters, digits
 }
 
 func genericCandidateScore(text string, start, end, base int) int {

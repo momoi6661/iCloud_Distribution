@@ -202,6 +202,8 @@ func (s *Server) publicShareInbox(c *gin.Context) {
 	for i := range messages {
 		if code := mail.ExtractVerificationCode(messages[i].Subject + "\n" + messages[i].Preview); code != "" {
 			messages[i].Code = code
+		} else if !mail.IsPlausibleVerificationCode(messages[i].Code) {
+			messages[i].Code = ""
 		}
 		if messages[i].Preview == "" && messages[i].Code != "" {
 			messages[i].Preview = "已识别验证码：" + messages[i].Code
