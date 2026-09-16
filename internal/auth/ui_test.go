@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func testAuth(t *testing.T, password string) (*UIAuth, *UserStore) {
@@ -19,6 +21,33 @@ func testAuth(t *testing.T, password string) (*UIAuth, *UserStore) {
 		t.Fatal(err)
 	}
 	return auth, store
+}
+
+func TestUIAuthSessionRenewsAndCookieUsesForwardedHTTPS(t *testing.T) {
+	a, store := testAuth(t, "secret123")
+	_, token, err := a.Login("liuyuquan", "secret123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nearExpiry := time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339)
+	if _, err := store.db.Exec(`UPDATE ui_sessions SET expires_at=? WHERE token_hash=?`, nearExpiry, credentialStamp(token)); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/accounts", nil)
+	req.Header.Set("X-Forwarded-Proto", "https, http")
+	req.AddCookie(&http.Cookie{Name: UICookieName, Value: token})
+	w := httptest.NewRecorder()
+	a.RefreshSession(w, req)
+	setCookie := w.Header().Get("Set-Cookie")
+	if !strings.Contains(setCookie, "Secure") {
+		t.Fatalf("renewed cookie should be Secure behind HTTPS proxy: %q", setCookie)
+	}
+	if !strings.Contains(setCookie, "Max-Age=2592000") {
+		t.Fatalf("renewed cookie should keep 30-day max age: %q", setCookie)
+	}
+	if !a.ValidRequest(req) {
+		t.Fatal("renewed session should remain valid")
+	}
 }
 
 func TestUIAuthSuperadminRoundtrip(t *testing.T) {

@@ -319,3 +319,32 @@ func (s *UserStore) DeleteSession(token string) error {
 	_, err := s.db.Exec(`DELETE FROM ui_sessions WHERE token_hash=?`, credentialStamp(token))
 	return err
 }
+
+// RenewSession slides the expiry of an already validated session. It returns
+// true only when the expiry was actually extended, allowing the HTTP layer to
+// avoid resetting the cookie on every request.
+func (s *UserStore) RenewSession(token string, ttl, renewWindow time.Duration) bool {
+	if token == "" || ttl <= 0 || renewWindow <= 0 {
+		return false
+	}
+	var stamp, expires string
+	if err := s.db.QueryRow(`SELECT credential_stamp,expires_at FROM ui_sessions WHERE token_hash=?`, credentialStamp(token)).Scan(&stamp, &expires); err != nil {
+		return false
+	}
+	if stamp == "" {
+		return false
+	}
+	// The caller has already passed Session's identity and credential checks;
+	// this query only decides whether a new expiry should be persisted.
+	expiry, err := time.Parse(time.RFC3339, expires)
+	if err != nil || time.Now().After(expiry) || time.Until(expiry) > renewWindow {
+		return false
+	}
+	newExpiry := time.Now().UTC().Add(ttl).Format(time.RFC3339)
+	result, err := s.db.Exec(`UPDATE ui_sessions SET expires_at=? WHERE token_hash=? AND credential_stamp=?`, newExpiry, credentialStamp(token), stamp)
+	if err != nil {
+		return false
+	}
+	n, _ := result.RowsAffected()
+	return n > 0
+}

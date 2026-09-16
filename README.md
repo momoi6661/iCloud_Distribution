@@ -33,7 +33,7 @@ export HME_SUPERADMIN_PASSWORD='请替换为强密码'
 docker compose up -d --build
 ```
 
-打开 http://localhost:6981，登录页只需要输入这个密码。密码不会写入 `data/`。
+打开 http://localhost:6981，在登录页输入系统账号 `liuyuquan` 和对应的超级管理员密码。这个密码不会写入 `data/`；iCloud/Apple ID 密码只在账号授权流程中使用，不能代替系统登录密码。
 
 ### 方式二：本地构建
 

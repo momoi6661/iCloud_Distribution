@@ -32,6 +32,9 @@ func (s *Server) uiMiddleware() gin.HandlerFunc {
 			return
 		}
 		c.Set("ui_identity", *identity)
+		// Keep the system console session alive while it is actively used.
+		// This is independent from the iCloud account authorization session.
+		s.ui.RefreshSession(c.Writer, c.Request)
 		c.Next()
 	}
 }

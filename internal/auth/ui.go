@@ -10,7 +10,11 @@ import (
 )
 
 const UICookieName = "hme_ui_session"
-const uiSessionTTL = 12 * time.Hour
+
+// UI 会话默认保留 30 天，并在用户持续使用时滑动续期。
+// 这样浏览器刷新或容器重启（数据库持久化时）不会频繁要求重新登录。
+const uiSessionTTL = 30 * 24 * time.Hour
+const uiSessionRenewWindow = 15 * 24 * time.Hour
 
 type UIAuth struct {
 	store             *UserStore
@@ -53,16 +57,39 @@ func (a *UIAuth) Identity(r *http.Request) (*Identity, bool) {
 }
 
 func (a *UIAuth) IssueCookie(w http.ResponseWriter, r *http.Request, token string) {
-	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	secure := requestIsHTTPS(r)
 	http.SetCookie(w, &http.Cookie{Name: UICookieName, Value: token, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: int(uiSessionTTL.Seconds())})
+}
+
+// RefreshSession extends an active session when it is approaching expiry and
+// refreshes the browser cookie at the same time. The database write is
+// throttled by uiSessionRenewWindow so normal polling does not write on every
+// request.
+func (a *UIAuth) RefreshSession(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(UICookieName)
+	if err != nil || cookie.Value == "" {
+		return
+	}
+	if a.store.RenewSession(cookie.Value, uiSessionTTL, uiSessionRenewWindow) {
+		a.IssueCookie(w, r, cookie.Value)
+	}
 }
 
 func (a *UIAuth) ClearCookie(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(UICookieName); err == nil {
 		_ = a.store.DeleteSession(cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: UICookieName, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: UICookieName, Value: "", Path: "/", HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 }
 
 func (a *UIAuth) ValidRequest(r *http.Request) bool { _, ok := a.Identity(r); return ok }
 func (a *UIAuth) Store() *UserStore                 { return a.store }
+
+func requestIsHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	// Reverse proxies may include a comma-separated forwarding chain.
+	proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(proto, "https")
+}
