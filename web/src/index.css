@@ -643,3 +643,51 @@ h1, h2, h3, strong { font-weight: 650; }
   .account-table .account-identity { min-width: 0; }
   .account-table .account-identity small { font-size: 11px; }
 }
+
+/* Disabled accounts: selection context stays separate from mobile actions. */
+.disabled-batch-toolbar .batch-selection-summary,
+.disabled-batch-toolbar .batch-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.disabled-batch-toolbar .batch-selection-summary > span {
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.disabled-batch-toolbar .batch-selection-summary .text-button { display: none; }
+
+@media (max-width: 720px) {
+  .disabled-batch-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
+  .disabled-batch-toolbar .batch-selection-summary {
+    min-height: 36px;
+    justify-content: space-between;
+    padding-left: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .disabled-batch-toolbar .batch-selection-summary .text-button {
+    display: inline-flex;
+    min-height: 36px;
+    padding-inline: 8px;
+  }
+  .disabled-batch-toolbar .toolbar-separator,
+  .disabled-batch-toolbar .desktop-batch-clear { display: none; }
+  .disabled-batch-toolbar .batch-action-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .disabled-batch-toolbar .batch-action-group > button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    white-space: nowrap;
+  }
+}
