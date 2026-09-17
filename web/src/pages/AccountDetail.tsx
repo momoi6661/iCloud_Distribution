@@ -467,6 +467,7 @@ export default function AccountDetailPage({
   const [groupOrderDirty, setGroupOrderDirty] = useState(false);
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const groupListRef = useRef<HTMLDivElement>(null);
   const groupRowRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingGroupRects = useRef(new Map<string, DOMRect>());
   const groupMoveAnimations = useRef(new Map<string, Animation>());
@@ -1231,6 +1232,29 @@ export default function AccountDetailPage({
       return next;
     });
     setGroupOrderDirty(true);
+  };
+  const moveGroupDrag = (pointerId: number, clientX: number, clientY: number) => {
+    const drag = groupDrag.current;
+    if (!drag || drag.pointerId !== pointerId) return;
+    drag.pointerY = clientY;
+    const sourceRow = groupRowRefs.current.get(drag.sourceId);
+    if (sourceRow) {
+      const current = sourceRow.getBoundingClientRect();
+      const layoutTop = current.top - drag.translateY;
+      drag.translateY = clientY - drag.grabOffsetY - layoutTop;
+      sourceRow.style.transform = `translate3d(0, ${drag.translateY}px, 0)`;
+    }
+    if (Math.abs(clientY - drag.startY) < 5) return;
+    const targetRow = document
+      .elementsFromPoint(clientX, clientY)
+      .map((element) => element.closest<HTMLElement>("[data-group-id]"))
+      .find((row) => row?.dataset.groupId && row.dataset.groupId !== drag.sourceId);
+    const target = targetRow?.dataset.groupId;
+    if (target && targetRow) {
+      setDragOverGroupId(target);
+      const box = targetRow.getBoundingClientRect();
+      moveGroup(drag.sourceId, target, clientY >= box.top + box.height / 2);
+    }
   };
   const finishGroupDrag = () => {
     const drag = groupDrag.current;
@@ -2463,7 +2487,14 @@ export default function AccountDetailPage({
               </button>
             </div>
           )}
-          <div className={`group-list ${draggedGroupId ? "group-list-reordering" : ""}`}>
+          <div
+            ref={groupListRef}
+            className={`group-list ${draggedGroupId ? "group-list-reordering" : ""}`}
+            onPointerMove={(event) => moveGroupDrag(event.pointerId, event.clientX, event.clientY)}
+            onPointerUp={finishGroupDrag}
+            onPointerCancel={finishGroupDrag}
+            onLostPointerCapture={finishGroupDrag}
+          >
             {groups.length === 0 ? (
               <p className="group-empty">还没有自定义分组。</p>
             ) : (
@@ -2527,34 +2558,8 @@ export default function AccountDetailPage({
                             };
                             setDraggedGroupId(group.id);
                             setDragOverGroupId(group.id);
-                            event.currentTarget.setPointerCapture(event.pointerId);
+                            groupListRef.current?.setPointerCapture(event.pointerId);
                           }}
-                          onPointerMove={(event) => {
-                            const drag = groupDrag.current;
-                            if (!drag || drag.pointerId !== event.pointerId) return;
-                            drag.pointerY = event.clientY;
-                            const sourceRow = groupRowRefs.current.get(drag.sourceId);
-                            if (sourceRow) {
-                              const current = sourceRow.getBoundingClientRect();
-                              const layoutTop = current.top - drag.translateY;
-                              drag.translateY = event.clientY - drag.grabOffsetY - layoutTop;
-                              sourceRow.style.transform = `translate3d(0, ${drag.translateY}px, 0)`;
-                            }
-                            if (Math.abs(event.clientY - drag.startY) < 5) return;
-                            const targetRow = document
-                              .elementsFromPoint(event.clientX, event.clientY)
-                              .map((element) => element.closest<HTMLElement>("[data-group-id]"))
-                              .find((row) => row?.dataset.groupId && row.dataset.groupId !== drag.sourceId);
-                            const target = targetRow?.dataset.groupId;
-                            if (target && targetRow) {
-                              setDragOverGroupId(target);
-                              const box = targetRow.getBoundingClientRect();
-                              moveGroup(drag.sourceId, target, event.clientY >= box.top + box.height / 2);
-                            }
-                          }}
-                          onPointerUp={finishGroupDrag}
-                          onPointerCancel={finishGroupDrag}
-                          onLostPointerCapture={finishGroupDrag}
                         >
                           ⠿
                         </button>
