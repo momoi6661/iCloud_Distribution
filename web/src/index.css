@@ -616,15 +616,20 @@ h1, h2, h3, strong { font-weight: 650; }
 .profile-form { padding: 0 22px 24px; }
 .group-order-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 22px 10px; padding:8px 10px; color:var(--text-2); background:var(--ink-800); border:1px solid var(--line); border-radius:6px; font-size:12px; }
 .group-order-bar .button { flex:0 0 auto; min-height:38px; }
-.group-row { transition: background .12s var(--ease), opacity .12s var(--ease); }
-.group-row-dragging { opacity:.58; background:var(--ink-800); }
+.group-row { transition: background .12s var(--ease), border-color .12s var(--ease), opacity .12s var(--ease), box-shadow .12s var(--ease); }
+.group-list-reordering .group-row { will-change: transform; }
+.group-row-dragging { position:relative; z-index:1; opacity:.78; background:var(--ink-800); border-color:rgba(125,226,178,.28); box-shadow:0 8px 20px rgba(0,0,0,.16); }
+.group-row-drop-target { box-shadow: inset 0 2px 0 var(--mint); }
 .group-row > .group-row-main { display:flex; align-items:center; gap:8px; min-width:0; }
 .group-row-main .group-row-copy { display:grid; min-width:0; gap:4px; }
 .group-row-main .group-row-copy strong,
 .group-row-main .group-row-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .group-row > .group-row-actions { display:flex; align-items:center; gap:2px; }
-.group-drag-handle { display:inline-grid; flex:0 0 auto; place-items:center; width:28px; height:44px; color:var(--text-4); cursor:grab; user-select:none; touch-action:none; font-size:18px; line-height:1; }
+.group-drag-handle { display:inline-grid; flex:0 0 auto; place-items:center; width:36px; height:44px; padding:0; border:0; border-radius:6px; color:var(--text-4); background:transparent; cursor:grab; user-select:none; touch-action:none; font-size:18px; line-height:1; }
 .group-drag-handle:active { cursor:grabbing; }
+@media (hover:hover) and (pointer:fine) {
+  .group-drag-handle:hover { color:var(--text-2); background:var(--ink-800); }
+}
 @media (max-width: 720px) {
   .user-create-form { grid-template-columns: 1fr; padding-inline: 16px; }
   .user-list { padding-inline: 16px; }

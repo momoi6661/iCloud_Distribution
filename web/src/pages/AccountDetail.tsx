@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   api,
@@ -466,6 +466,15 @@ export default function AccountDetailPage({
   const [renameValue, setRenameValue] = useState("");
   const [groupOrderDirty, setGroupOrderDirty] = useState(false);
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const groupRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const pendingGroupRects = useRef(new Map<string, DOMRect>());
+  const groupMoveAnimations = useRef(new Map<string, Animation>());
+  const groupDrag = useRef<{
+    pointerId: number;
+    sourceId: string;
+    startY: number;
+  } | null>(null);
   const [message, setMessage] = useState<FullMailMessage | null>(null);
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState("");
@@ -1201,6 +1210,13 @@ export default function AccountDetailPage({
     if (currentSourceIndex < 0 || currentTargetIndex < 0) return;
     if (currentSourceIndex < currentTargetIndex && !placeAfter) return;
     if (currentSourceIndex > currentTargetIndex && placeAfter) return;
+    const previousRects = new Map<string, DOMRect>();
+    groupRowRefs.current.forEach((row, groupId) => {
+      previousRects.set(groupId, row.getBoundingClientRect());
+    });
+    groupMoveAnimations.current.forEach((animation) => animation.cancel());
+    groupMoveAnimations.current.clear();
+    pendingGroupRects.current = previousRects;
     setGroups((current) => {
       const sourceIndex = current.findIndex((item) => item.id === sourceId);
       const targetIndex = current.findIndex((item) => item.id === targetId);
@@ -1213,6 +1229,35 @@ export default function AccountDetailPage({
     });
     setGroupOrderDirty(true);
   };
+  useLayoutEffect(() => {
+    if (pendingGroupRects.current.size === 0) return;
+    const previousRects = pendingGroupRects.current;
+    pendingGroupRects.current = new Map();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    groupRowRefs.current.forEach((row, groupId) => {
+      const previous = previousRects.get(groupId);
+      if (!previous) return;
+      const current = row.getBoundingClientRect();
+      const offsetY = previous.top - current.top;
+      if (Math.abs(offsetY) < 1) return;
+      const animation = row.animate(
+        [
+          { transform: `translate3d(0, ${offsetY}px, 0)` },
+          { transform: "translate3d(0, 0, 0)" },
+        ],
+        {
+          duration: 190,
+          easing: "cubic-bezier(.2, .8, .2, 1)",
+        },
+      );
+      groupMoveAnimations.current.set(groupId, animation);
+      animation.addEventListener("finish", () => {
+        if (groupMoveAnimations.current.get(groupId) === animation) {
+          groupMoveAnimations.current.delete(groupId);
+        }
+      });
+    });
+  }, [groups]);
   const saveGroupOrder = async () => {
     if (!groupOrderDirty) return;
     setBusy(true);
@@ -2382,28 +2427,19 @@ export default function AccountDetailPage({
               </button>
             </div>
           )}
-          <div className="group-list">
+          <div className={`group-list ${draggedGroupId ? "group-list-reordering" : ""}`}>
             {groups.length === 0 ? (
               <p className="group-empty">还没有自定义分组。</p>
             ) : (
               groups.map((group) => (
                 <div
-                  className={`group-row ${draggedGroupId === group.id ? "group-row-dragging" : ""}`}
+                  className={`group-row ${draggedGroupId === group.id ? "group-row-dragging" : ""} ${dragOverGroupId === group.id && draggedGroupId !== group.id ? "group-row-drop-target" : ""}`}
                   key={group.id}
                   data-group-id={group.id}
-                  draggable={renameGroupId !== group.id}
-                  onDragStart={(event) => {
-                    setDraggedGroupId(group.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", group.id);
+                  ref={(row) => {
+                    if (row) groupRowRefs.current.set(group.id, row);
+                    else groupRowRefs.current.delete(group.id);
                   }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    if (!draggedGroupId) return;
-                    const box = event.currentTarget.getBoundingClientRect();
-                    moveGroup(draggedGroupId, group.id, event.clientY >= box.top + box.height / 2);
-                  }}
-                  onDragEnd={() => setDraggedGroupId(null)}
                 >
                   {renameGroupId === group.id ? (
                     <form
@@ -2434,32 +2470,56 @@ export default function AccountDetailPage({
                   ) : (
                     <>
                       <div className="group-row-main">
-                        <span
+                        <button
+                          type="button"
                           className="group-drag-handle"
                           aria-label={`拖动排序 ${group.name}`}
                           title="拖动排序"
-                          role="img"
                           onPointerDown={(event) => {
-                            if (event.pointerType === "mouse") return;
+                            if (renameGroupId === group.id) return;
+                            if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+                            event.preventDefault();
+                            groupDrag.current = {
+                              pointerId: event.pointerId,
+                              sourceId: group.id,
+                              startY: event.clientY,
+                            };
                             setDraggedGroupId(group.id);
+                            setDragOverGroupId(group.id);
                             event.currentTarget.setPointerCapture(event.pointerId);
                           }}
                           onPointerMove={(event) => {
-                            if (!draggedGroupId || event.pointerType === "mouse") return;
+                            const drag = groupDrag.current;
+                            if (!drag || drag.pointerId !== event.pointerId) return;
+                            if (Math.abs(event.clientY - drag.startY) < 5) return;
                             const targetRow = document
                               .elementFromPoint(event.clientX, event.clientY)
                               ?.closest<HTMLElement>("[data-group-id]");
                             const target = targetRow?.dataset.groupId;
                             if (target && targetRow) {
+                              setDragOverGroupId(target);
                               const box = targetRow.getBoundingClientRect();
-                              moveGroup(draggedGroupId, target, event.clientY >= box.top + box.height / 2);
+                              moveGroup(drag.sourceId, target, event.clientY >= box.top + box.height / 2);
                             }
                           }}
-                          onPointerUp={() => setDraggedGroupId(null)}
-                          onPointerCancel={() => setDraggedGroupId(null)}
+                          onPointerUp={() => {
+                            groupDrag.current = null;
+                            setDraggedGroupId(null);
+                            setDragOverGroupId(null);
+                          }}
+                          onPointerCancel={() => {
+                            groupDrag.current = null;
+                            setDraggedGroupId(null);
+                            setDragOverGroupId(null);
+                          }}
+                          onLostPointerCapture={() => {
+                            groupDrag.current = null;
+                            setDraggedGroupId(null);
+                            setDragOverGroupId(null);
+                          }}
                         >
                           ⠿
-                        </span>
+                        </button>
                         <span className="group-row-copy">
                           <strong>{group.name}</strong>
                           <small>{allGroupCounts[group.id] || 0} 个别名</small>
