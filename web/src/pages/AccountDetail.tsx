@@ -2433,7 +2433,7 @@ export default function AccountDetailPage({
                     </form>
                   ) : (
                     <>
-                      <div>
+                      <div className="group-row-main">
                         <span
                           className="group-drag-handle"
                           aria-label={`拖动排序 ${group.name}`}
@@ -2460,10 +2460,12 @@ export default function AccountDetailPage({
                         >
                           ⠿
                         </span>
-                        <strong>{group.name}</strong>
-                        <small>{allGroupCounts[group.id] || 0} 个别名</small>
+                        <span className="group-row-copy">
+                          <strong>{group.name}</strong>
+                          <small>{allGroupCounts[group.id] || 0} 个别名</small>
+                        </span>
                       </div>
-                      <div>
+                      <div className="group-row-actions">
                         <button
                           className="row-action"
                           aria-label={`重命名 ${group.name}`}

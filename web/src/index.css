@@ -618,7 +618,12 @@ h1, h2, h3, strong { font-weight: 650; }
 .group-order-bar .button { flex:0 0 auto; min-height:38px; }
 .group-row { transition: background .12s var(--ease), opacity .12s var(--ease); }
 .group-row-dragging { opacity:.58; background:var(--ink-800); }
-.group-drag-handle { display:inline-grid; place-items:center; width:28px; height:36px; margin-right:4px; color:var(--text-4); cursor:grab; user-select:none; touch-action:none; font-size:18px; line-height:1; }
+.group-row > .group-row-main { display:flex; align-items:center; gap:8px; min-width:0; }
+.group-row-main .group-row-copy { display:grid; min-width:0; gap:4px; }
+.group-row-main .group-row-copy strong,
+.group-row-main .group-row-copy small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.group-row > .group-row-actions { display:flex; align-items:center; gap:2px; }
+.group-drag-handle { display:inline-grid; flex:0 0 auto; place-items:center; width:28px; height:44px; color:var(--text-4); cursor:grab; user-select:none; touch-action:none; font-size:18px; line-height:1; }
 .group-drag-handle:active { cursor:grabbing; }
 @media (max-width: 720px) {
   .user-create-form { grid-template-columns: 1fr; padding-inline: 16px; }
