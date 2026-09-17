@@ -225,6 +225,38 @@ func TestManager_OrganizerPersistenceAndGroupDeletion(t *testing.T) {
 	}
 }
 
+func TestManager_ReorderGroupsPersistsOrder(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc, err := m.AddAccount("ordered", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, err := m.CreateGroup(acc.ID, "One")
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := m.CreateGroup(acc.ID, "Two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ReorderGroups(acc.ID, []string{two.ID, one.ID}); err != nil {
+		t.Fatal(err)
+	}
+	groups, _, err := m.Organizer(acc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || groups[0].ID != two.ID || groups[1].ID != one.ID {
+		t.Fatalf("unexpected order: %+v", groups)
+	}
+	if err := m.ReorderGroups(acc.ID, []string{one.ID}); err == nil {
+		t.Fatal("expected stale order to be rejected")
+	}
+}
+
 func TestManager_OrganizerLoadsOldAccountsJSON(t *testing.T) {
 	dir := t.TempDir()
 	raw := `{"accounts":{"acc_old":{"id":"acc_old","name":"old","status":"active"}},"updated_at":"2020-01-01T00:00:00Z"}`
@@ -296,12 +328,12 @@ func TestManager_ListAccountsRedactsForwardIMAPPassword(t *testing.T) {
 
 func TestIsICloudDomain(t *testing.T) {
 	tests := map[string]bool{
-		"owner@icloud.com":          true,
-		"OWNER@ME.COM":              true,
-		"owner@mac.com":             true,
-		"owner@gmail.com":           false,
+		"owner@icloud.com":           true,
+		"OWNER@ME.COM":               true,
+		"owner@mac.com":              true,
+		"owner@gmail.com":            false,
 		"owner@icloud.com.evil.test": false,
-		"icloud.com":                false,
+		"icloud.com":                 false,
 	}
 	for email, want := range tests {
 		if got := isICloudDomain(email); got != want {

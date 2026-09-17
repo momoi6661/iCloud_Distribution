@@ -39,6 +39,10 @@ type organizerGroupReq struct {
 	Name string `json:"name"`
 }
 
+type organizerGroupOrderReq struct {
+	GroupIDs []string `json:"group_ids" binding:"required"`
+}
+
 func (s *Server) createOrganizerGroup(c *gin.Context) {
 	var req organizerGroupReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -64,6 +68,19 @@ func (s *Server) updateOrganizerGroup(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"id": c.Param("group_id"), "name": req.Name})
+}
+
+func (s *Server) reorderOrganizerGroups(c *gin.Context) {
+	var req organizerGroupOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: group_ids 必填")
+		return
+	}
+	if err := s.mgr.ReorderGroups(c.Param("id"), req.GroupIDs); err != nil {
+		organizerFail(c, err)
+		return
+	}
+	ok(c, gin.H{"group_ids": req.GroupIDs})
 }
 
 func (s *Server) deleteOrganizerGroup(c *gin.Context) {

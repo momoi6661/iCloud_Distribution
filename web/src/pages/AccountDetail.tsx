@@ -464,6 +464,8 @@ export default function AccountDetailPage({
   const [groupName, setGroupName] = useState("");
   const [renameGroupId, setRenameGroupId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [groupOrderDirty, setGroupOrderDirty] = useState(false);
+  const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
   const [message, setMessage] = useState<FullMailMessage | null>(null);
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState("");
@@ -513,6 +515,7 @@ export default function AccountDetailPage({
       setAliases(aliasResult.aliases || []);
       setShares(shareResultData || []);
       setGroups(organizer.groups || []);
+      setGroupOrderDirty(false);
       setMetadata(organizer.metadata || {});
     } catch (e) {
       setNotice((e as Error).message);
@@ -1187,6 +1190,38 @@ export default function AccountDetailPage({
       setNotice("分组已删除，别名仍保留为未分组。");
     } catch (e) {
       setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const moveGroup = (sourceId: string, targetId: string, placeAfter: boolean) => {
+    if (sourceId === targetId) return;
+    const currentSourceIndex = groups.findIndex((item) => item.id === sourceId);
+    const currentTargetIndex = groups.findIndex((item) => item.id === targetId);
+    if (currentSourceIndex < 0 || currentTargetIndex < 0) return;
+    if (currentSourceIndex < currentTargetIndex && !placeAfter) return;
+    if (currentSourceIndex > currentTargetIndex && placeAfter) return;
+    setGroups((current) => {
+      const sourceIndex = current.findIndex((item) => item.id === sourceId);
+      const targetIndex = current.findIndex((item) => item.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const next = [...current];
+      const [moved] = next.splice(sourceIndex, 1);
+      const nextTargetIndex = next.findIndex((item) => item.id === targetId);
+      next.splice(nextTargetIndex + (placeAfter ? 1 : 0), 0, moved);
+      return next;
+    });
+    setGroupOrderDirty(true);
+  };
+  const saveGroupOrder = async () => {
+    if (!groupOrderDirty) return;
+    setBusy(true);
+    try {
+      await api.reorderOrganizerGroups(id, groups.map((group) => group.id));
+      setGroupOrderDirty(false);
+      setNotice("分组排序已保存。");
+    } catch (e) {
+      setNotice(`保存分组排序失败：${errorText(e)}`);
     } finally {
       setBusy(false);
     }
@@ -2339,12 +2374,37 @@ export default function AccountDetailPage({
             <span>分组</span>
             <span>别名数</span>
           </div>
+          {groupOrderDirty && (
+            <div className="group-order-bar" role="status">
+              <span>顺序已调整，保存后对当前账号生效。</span>
+              <button className="button primary small" type="button" disabled={busy} onClick={() => void saveGroupOrder()}>
+                {busy ? "保存中…" : "保存排序"}
+              </button>
+            </div>
+          )}
           <div className="group-list">
             {groups.length === 0 ? (
               <p className="group-empty">还没有自定义分组。</p>
             ) : (
               groups.map((group) => (
-                <div className="group-row" key={group.id}>
+                <div
+                  className={`group-row ${draggedGroupId === group.id ? "group-row-dragging" : ""}`}
+                  key={group.id}
+                  data-group-id={group.id}
+                  draggable={renameGroupId !== group.id}
+                  onDragStart={(event) => {
+                    setDraggedGroupId(group.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", group.id);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    if (!draggedGroupId) return;
+                    const box = event.currentTarget.getBoundingClientRect();
+                    moveGroup(draggedGroupId, group.id, event.clientY >= box.top + box.height / 2);
+                  }}
+                  onDragEnd={() => setDraggedGroupId(null)}
+                >
                   {renameGroupId === group.id ? (
                     <form
                       className="group-rename"
@@ -2374,6 +2434,32 @@ export default function AccountDetailPage({
                   ) : (
                     <>
                       <div>
+                        <span
+                          className="group-drag-handle"
+                          aria-label={`拖动排序 ${group.name}`}
+                          title="拖动排序"
+                          role="img"
+                          onPointerDown={(event) => {
+                            if (event.pointerType === "mouse") return;
+                            setDraggedGroupId(group.id);
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                          }}
+                          onPointerMove={(event) => {
+                            if (!draggedGroupId || event.pointerType === "mouse") return;
+                            const targetRow = document
+                              .elementFromPoint(event.clientX, event.clientY)
+                              ?.closest<HTMLElement>("[data-group-id]");
+                            const target = targetRow?.dataset.groupId;
+                            if (target && targetRow) {
+                              const box = targetRow.getBoundingClientRect();
+                              moveGroup(draggedGroupId, target, event.clientY >= box.top + box.height / 2);
+                            }
+                          }}
+                          onPointerUp={() => setDraggedGroupId(null)}
+                          onPointerCancel={() => setDraggedGroupId(null)}
+                        >
+                          ⠿
+                        </span>
                         <strong>{group.name}</strong>
                         <small>{allGroupCounts[group.id] || 0} 个别名</small>
                       </div>

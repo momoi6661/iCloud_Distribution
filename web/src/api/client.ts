@@ -220,6 +220,7 @@ export const api = {
   getOrganizer: (accountId: string) => request<OrganizerData>('GET', `/api/accounts/${accountId}/organizer`),
   createOrganizerGroup: (accountId: string, name: string) => request<OrganizerGroup>('POST', `/api/accounts/${accountId}/groups`, { name }),
   renameOrganizerGroup: (accountId: string, groupId: string, name: string) => request<OrganizerGroup>('PUT', `/api/accounts/${accountId}/groups/${groupId}`, { name }),
+  reorderOrganizerGroups: (accountId: string, groupIds: string[]) => request<{ group_ids: string[] }>('PUT', `/api/accounts/${accountId}/groups-order`, { group_ids: groupIds }),
   deleteOrganizerGroup: (accountId: string, groupId: string) => request<{ id: string }>('DELETE', `/api/accounts/${accountId}/groups/${groupId}`),
   updateAliasMeta: (accountId: string, meta: { alias_id: string; email: string; label: string; group_id: string; note: string }) => request<AliasMetadata>('PUT', `/api/accounts/${accountId}/alias-meta`, meta),
   createAlias: (accountId: string, label: string, groupId = '') => request<{ email: string; label: string; anonymous_id?: string }>('POST', '/api/create', { account_id: accountId, label, group_id: groupId }),

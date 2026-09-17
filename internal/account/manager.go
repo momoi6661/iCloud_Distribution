@@ -562,6 +562,40 @@ func (m *Manager) UpdateGroup(accountID, groupID, name string) error {
 	return fmt.Errorf("分组不存在: %s", groupID)
 }
 
+// ReorderGroups changes only the local display order of an account's groups.
+// The complete ID list is required so a stale client cannot accidentally drop
+// a group while saving a drag operation.
+func (m *Manager) ReorderGroups(accountID string, groupIDs []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[accountID]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", accountID)
+	}
+	if len(groupIDs) != len(acc.Groups) {
+		return fmt.Errorf("分组列表已变化，请刷新后重试")
+	}
+	byID := make(map[string]LocalGroup, len(acc.Groups))
+	for _, group := range acc.Groups {
+		byID[group.ID] = group
+	}
+	ordered := make([]LocalGroup, 0, len(groupIDs))
+	seen := make(map[string]struct{}, len(groupIDs))
+	for _, id := range groupIDs {
+		group, exists := byID[id]
+		if !exists {
+			return fmt.Errorf("分组列表已变化，请刷新后重试")
+		}
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("分组排序数据无效")
+		}
+		seen[id] = struct{}{}
+		ordered = append(ordered, group)
+	}
+	acc.Groups = ordered
+	return m.save()
+}
+
 func (m *Manager) DeleteGroup(accountID, groupID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
