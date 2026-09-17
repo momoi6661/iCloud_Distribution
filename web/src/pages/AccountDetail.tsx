@@ -474,6 +474,9 @@ export default function AccountDetailPage({
     pointerId: number;
     sourceId: string;
     startY: number;
+    pointerY: number;
+    grabOffsetY: number;
+    translateY: number;
   } | null>(null);
   const [message, setMessage] = useState<FullMailMessage | null>(null);
   const [messageLoading, setMessageLoading] = useState(false);
@@ -1229,12 +1232,45 @@ export default function AccountDetailPage({
     });
     setGroupOrderDirty(true);
   };
+  const finishGroupDrag = () => {
+    const drag = groupDrag.current;
+    if (!drag) return;
+    groupDrag.current = null;
+    const row = groupRowRefs.current.get(drag.sourceId);
+    if (row) {
+      row.style.transform = "";
+      if (
+        Math.abs(drag.translateY) >= 1 &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        const animation = row.animate(
+          [
+            { transform: `translate3d(0, ${drag.translateY}px, 0)` },
+            { transform: "translate3d(0, 0, 0)" },
+          ],
+          { duration: 150, easing: "cubic-bezier(.2, .8, .2, 1)" },
+        );
+        groupMoveAnimations.current.set(drag.sourceId, animation);
+      }
+    }
+    setDraggedGroupId(null);
+    setDragOverGroupId(null);
+  };
   useLayoutEffect(() => {
     if (pendingGroupRects.current.size === 0) return;
     const previousRects = pendingGroupRects.current;
     pendingGroupRects.current = new Map();
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     groupRowRefs.current.forEach((row, groupId) => {
+      const activeDrag = groupDrag.current;
+      if (activeDrag?.sourceId === groupId) {
+        const current = row.getBoundingClientRect();
+        const desiredTop = activeDrag.pointerY - activeDrag.grabOffsetY;
+        activeDrag.translateY += desiredTop - current.top;
+        row.style.transform = `translate3d(0, ${activeDrag.translateY}px, 0)`;
+        return;
+      }
+      if (reducedMotion) return;
       const previous = previousRects.get(groupId);
       if (!previous) return;
       const current = row.getBoundingClientRect();
@@ -2483,6 +2519,11 @@ export default function AccountDetailPage({
                               pointerId: event.pointerId,
                               sourceId: group.id,
                               startY: event.clientY,
+                              pointerY: event.clientY,
+                              grabOffsetY:
+                                event.clientY -
+                                (groupRowRefs.current.get(group.id)?.getBoundingClientRect().top || event.clientY),
+                              translateY: 0,
                             };
                             setDraggedGroupId(group.id);
                             setDragOverGroupId(group.id);
@@ -2491,10 +2532,19 @@ export default function AccountDetailPage({
                           onPointerMove={(event) => {
                             const drag = groupDrag.current;
                             if (!drag || drag.pointerId !== event.pointerId) return;
+                            drag.pointerY = event.clientY;
+                            const sourceRow = groupRowRefs.current.get(drag.sourceId);
+                            if (sourceRow) {
+                              const current = sourceRow.getBoundingClientRect();
+                              const layoutTop = current.top - drag.translateY;
+                              drag.translateY = event.clientY - drag.grabOffsetY - layoutTop;
+                              sourceRow.style.transform = `translate3d(0, ${drag.translateY}px, 0)`;
+                            }
                             if (Math.abs(event.clientY - drag.startY) < 5) return;
                             const targetRow = document
-                              .elementFromPoint(event.clientX, event.clientY)
-                              ?.closest<HTMLElement>("[data-group-id]");
+                              .elementsFromPoint(event.clientX, event.clientY)
+                              .map((element) => element.closest<HTMLElement>("[data-group-id]"))
+                              .find((row) => row?.dataset.groupId && row.dataset.groupId !== drag.sourceId);
                             const target = targetRow?.dataset.groupId;
                             if (target && targetRow) {
                               setDragOverGroupId(target);
@@ -2502,21 +2552,9 @@ export default function AccountDetailPage({
                               moveGroup(drag.sourceId, target, event.clientY >= box.top + box.height / 2);
                             }
                           }}
-                          onPointerUp={() => {
-                            groupDrag.current = null;
-                            setDraggedGroupId(null);
-                            setDragOverGroupId(null);
-                          }}
-                          onPointerCancel={() => {
-                            groupDrag.current = null;
-                            setDraggedGroupId(null);
-                            setDragOverGroupId(null);
-                          }}
-                          onLostPointerCapture={() => {
-                            groupDrag.current = null;
-                            setDraggedGroupId(null);
-                            setDragOverGroupId(null);
-                          }}
+                          onPointerUp={finishGroupDrag}
+                          onPointerCancel={finishGroupDrag}
+                          onLostPointerCapture={finishGroupDrag}
                         >
                           ⠿
                         </button>
