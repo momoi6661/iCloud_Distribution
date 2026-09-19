@@ -48,6 +48,20 @@ const dateText = (date?: string) => {
       })
     : "—";
 };
+const compactDateText = (date?: string) => {
+  const parsed = parseDateValue(date);
+  if (!parsed) return "—";
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value || "";
+  return `${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+};
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 const newestFirst = <T extends { date?: string; id: string }>(items: T[]) =>
@@ -1514,8 +1528,8 @@ export default function AccountDetailPage({
           </span>
           <small className="alias-created-at">
             {parseDateValue(item.createdAt)
-              ? `创建于 ${dateText(item.createdAt)}`
-              : "创建时间未知"}
+              ? `创建 ${compactDateText(item.createdAt)}`
+              : "时间未知"}
           </small>
           <small className="alias-local-summary">
             {meta?.group_id
