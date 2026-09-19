@@ -30,6 +30,12 @@ const PAGE_SIZE = 20;
 const INBOX_COUNT_CACHE_MS = 60_000;
 const MAX_SHARE_EXPIRY_MINUTES = 5_256_000;
 const inboxCountCache = new Map<string, { count: number; expiresAt: number }>();
+const mailMethodLabel = (method?: InboxData["method"]) => {
+  if (method === "forward_imap") return "转发邮箱 IMAP（列表 + 正文）";
+  if (method === "imap") return "iCloud IMAP（列表 + 正文）";
+  if (method === "web_api") return "iCloud Web API（仅列表摘要）";
+  return "未确定";
+};
 const parseDateValue = (date?: string) => {
   if (!date?.trim()) return null;
   const value = date.trim();
@@ -609,7 +615,7 @@ export default function AccountDetailPage({
     () => [
       { value: "auto", label: "自动选择" },
       ...(account?.has_forward_imap
-        ? [{ value: "forward_imap", label: "转发邮箱 IMAP" }]
+        ? [{ value: "forward_imap", label: "转发邮箱 IMAP（列表 + 正文）" }]
         : []),
       ...(account?.has_app_password
         ? [{ value: "imap", label: "iCloud IMAP（列表 + 正文）" }]
@@ -1991,19 +1997,14 @@ export default function AccountDetailPage({
                 </button>
               </div>
             </div>
-            {inbox?.method === "web_api" && (
-              <div className="inline-banner">
-                当前为 Web API 摘要模式。切换到可用的 IMAP 可读取完整正文。
-              </div>
-            )}
-            {inbox?.method === "forward_imap" && (
-              <div className="inline-banner">
-                当前从转发邮箱 IMAP 读取，点击邮件后才获取正文。
-              </div>
-            )}
-            {inbox?.method === "imap" && (
-              <div className="inline-banner">
-                当前从 iCloud IMAP 读取，点击邮件后才获取正文。
+            {inbox?.method && (
+              <div className="inline-banner mail-source-banner">
+                <strong>当前读取方式：{mailMethodLabel(inbox.method)}</strong>
+                <span>
+                  {inbox.method === "web_api"
+                    ? "当前显示主题、发件人和摘要；切换到 IMAP 后可查看完整正文。"
+                    : "列表和点击后的完整正文都来自当前 IMAP 邮箱。"}
+                </span>
               </div>
             )}
             {!inbox || !inbox.messages?.length ? (
