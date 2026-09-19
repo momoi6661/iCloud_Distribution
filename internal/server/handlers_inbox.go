@@ -53,24 +53,10 @@ func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (str
 	if alias != "" {
 		messages, readErr = mc.ListForwardedByAlias(alias, folders, limit, days)
 	} else {
-		client, clientErr := s.mgr.HMEClient(accountID, false)
-		if clientErr != nil {
-			unlock.Unlock()
-			return "", nil, clientErr
-		}
-		aliases, aliasErr := client.ListAliases()
-		_ = s.mgr.SaveCookies(accountID, client.Cookies)
-		if aliasErr != nil {
-			unlock.Unlock()
-			return "", nil, aliasErr
-		}
-		emails := make([]string, 0, len(aliases))
-		for _, item := range aliases {
-			if item.Email != "" {
-				emails = append(emails, item.Email)
-			}
-		}
-		messages, readErr = mc.ListForwardedByAliases(emails, folders, limit, days)
+		// Combined inbox means the configured mailbox as-is. Do not fetch the
+		// iCloud alias list and search every alias: that is slow and drops
+		// ordinary messages sent to the forwarding mailbox.
+		messages, readErr = mc.ListFolders(folders, limit, days)
 	}
 	unlock.Unlock()
 	if readErr != nil {
@@ -220,6 +206,16 @@ func (s *Server) inboxCount(c *gin.Context) {
 			}
 		}
 	}
+	if alias == "" {
+		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
+			count, countErr := mc.CountFolders(folders, days)
+			unlock.Unlock()
+			if countErr == nil {
+				ok(c, gin.H{"account_id": accountID, "alias": alias, "count": count, "method": "forward_imap"})
+				return
+			}
+		}
+	}
 	mc, unlock, err := s.mgr.AcquireIMAP(accountID)
 	if err != nil {
 		fail(c, http.StatusBadRequest, "邮件计数需要 App Password (IMAP): "+err.Error())
@@ -261,10 +257,6 @@ func (s *Server) getMessage(c *gin.Context) {
 	source := c.Query("source")
 	alias := strings.TrimSpace(c.Query("alias"))
 	if source == "forward_imap" {
-		if alias == "" {
-			fail(c, http.StatusBadRequest, "转发邮箱正文读取需要指定隐藏邮箱地址")
-			return
-		}
 		forwardClient, forwardUnlock, _, forwardErr := s.mgr.AcquireForwardIMAP(accountID)
 		mc, unlock, err = forwardClient, forwardUnlock, forwardErr
 	} else {
@@ -278,7 +270,7 @@ func (s *Server) getMessage(c *gin.Context) {
 	defer unlock.Unlock()
 
 	var full *mail.FullMessage
-	if source == "forward_imap" {
+	if source == "forward_imap" && alias != "" {
 		full, err = mc.GetForwardedFull(uint32(uid64), c.Query("folder"), alias)
 	} else {
 		full, err = mc.GetFull(uint32(uid64), c.Query("folder"))
@@ -310,10 +302,6 @@ func (s *Server) deleteMessage(c *gin.Context) {
 	var mc *mail.Client
 	var unlock interface{ Unlock() }
 	if source == "forward_imap" {
-		if strings.TrimSpace(c.Query("alias")) == "" {
-			fail(c, http.StatusBadRequest, "转发邮箱删除需要指定隐藏邮箱地址")
-			return
-		}
 		mc, unlock, _, err = s.mgr.AcquireForwardIMAP(accountID)
 	} else {
 		mc, unlock, err = s.mgr.AcquireIMAP(accountID)
@@ -323,7 +311,7 @@ func (s *Server) deleteMessage(c *gin.Context) {
 		return
 	}
 	defer unlock.Unlock()
-	if source == "forward_imap" {
+	if source == "forward_imap" && strings.TrimSpace(c.Query("alias")) != "" {
 		if err := mc.VerifyForwardedAlias(uint32(uid64), c.Query("folder"), c.Query("alias")); err != nil {
 			fail(c, http.StatusForbidden, err.Error())
 			return
@@ -396,12 +384,8 @@ func (s *Server) batchDeleteMessages(c *gin.Context) {
 			continue
 		}
 		seen[key] = true
-		if req.Source == "forward_imap" {
+		if req.Source == "forward_imap" && strings.TrimSpace(item.Alias) != "" {
 			alias := strings.TrimSpace(item.Alias)
-			if alias == "" {
-				fail(c, http.StatusBadRequest, "转发邮箱删除需要指定隐藏邮箱地址")
-				return
-			}
 			if verifyErr := mc.VerifyForwardedAlias(uint32(uid64), folder, alias); verifyErr != nil {
 				fail(c, http.StatusForbidden, verifyErr.Error())
 				return

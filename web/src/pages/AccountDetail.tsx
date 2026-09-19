@@ -1941,7 +1941,7 @@ export default function AccountDetailPage({
             <div className="panel-header compact">
               <div>
                 <span className="eyebrow">最近收件</span>
-                <h2>{alias || "全部别名"}</h2>
+                <h2>{alias || "全部邮件"}</h2>
               </div>
               <div className="inline-actions inbox-refresh-controls">
                 <label className="search-field inbox-list-search">

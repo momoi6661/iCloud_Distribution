@@ -512,12 +512,27 @@ func (c *Client) InboxCount() (int, error) {
 var MailFolders = []string{"INBOX", "Junk"}
 
 func (c *Client) ListInbox(limit int, days int) ([]Message, error) {
+	return c.ListFolders(MailFolders, limit, days)
+}
+
+// ListFolders lists messages from the configured folders without filtering by
+// recipient. This is the combined inbox path for generic forwarding mailboxes:
+// a QQ/Gmail/Outlook mailbox may contain ordinary mail as well as forwarded
+// iCloud mail, and the user explicitly asked to see that mailbox as-is.
+func (c *Client) ListFolders(folders []string, limit int, days int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	if len(folders) == 0 {
+		folders = []string{"INBOX"}
+	}
 	var out []Message
 	var lastErr error
-	for _, folder := range MailFolders {
+	for _, folder := range folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			continue
+		}
 		messages, err := c.ListFolder(folder, limit, days)
 		if err != nil {
 			lastErr = err
@@ -533,6 +548,43 @@ func (c *Client) ListInbox(limit int, days int) ([]Message, error) {
 		return nil, lastErr
 	}
 	return out, nil
+}
+
+// CountFolders counts messages in the configured folders without recipient
+// search. It only uses IMAP SEARCH and does not download message content.
+func (c *Client) CountFolders(folders []string, days int) (int, error) {
+	if c.cli == nil {
+		return 0, fmt.Errorf("未连接")
+	}
+	if len(folders) == 0 {
+		folders = []string{"INBOX"}
+	}
+	total := 0
+	var lastErr error
+	for _, folder := range folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			continue
+		}
+		if _, err := c.cli.Select(folder, true); err != nil {
+			lastErr = err
+			continue
+		}
+		criteria := imap.NewSearchCriteria()
+		if days > 0 {
+			criteria.Since = time.Now().AddDate(0, 0, -days)
+		}
+		uids, err := c.cli.UidSearch(criteria)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		total += len(uids)
+	}
+	if total == 0 && lastErr != nil {
+		return 0, lastErr
+	}
+	return total, nil
 }
 
 // ListFolder 列出指定文件夹的邮件。
