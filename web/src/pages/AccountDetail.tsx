@@ -30,13 +30,24 @@ const PAGE_SIZE = 20;
 const INBOX_COUNT_CACHE_MS = 60_000;
 const MAX_SHARE_EXPIRY_MINUTES = 5_256_000;
 const inboxCountCache = new Map<string, { count: number; expiresAt: number }>();
-const dateText = (date?: string) =>
-  date
-    ? new Date(date).toLocaleString("zh-CN", {
+const parseDateValue = (date?: string) => {
+  if (!date?.trim()) return null;
+  const value = date.trim();
+  const numeric = Number(value);
+  const parsed = /^\d+(?:\.\d+)?$/.test(value)
+    ? new Date(numeric >= 1_000_000_000_000 ? numeric : numeric * 1000)
+    : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const dateText = (date?: string) => {
+  const parsed = parseDateValue(date);
+  return parsed
+    ? parsed.toLocaleString("zh-CN", {
         dateStyle: "medium",
         timeStyle: "short",
       })
     : "—";
+};
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 const newestFirst = <T extends { date?: string; id: string }>(items: T[]) =>
@@ -1501,6 +1512,11 @@ export default function AccountDetailPage({
             {item.label || "未命名"}
             {item.forwardTo ? ` · 转发至 ${item.forwardTo}` : ""}
           </span>
+          <small className="alias-created-at">
+            {parseDateValue(item.createdAt)
+              ? `创建于 ${dateText(item.createdAt)}`
+              : "创建时间未知"}
+          </small>
           <small className="alias-local-summary">
             {meta?.group_id
               ? `分组：${groupNames[meta.group_id] || "未知分组"}`
@@ -2605,6 +2621,11 @@ export default function AccountDetailPage({
             名称会同步到 iCloud；分组和备注只保存在本项目中。
           </p>
           <p className="editor-address mono">{editorAlias?.email}</p>
+          <p className="editor-created-at">
+            {parseDateValue(editorAlias?.createdAt)
+              ? `创建于 ${dateText(editorAlias?.createdAt)}`
+              : "创建时间未知"}
+          </p>
           <label className="field">
             <span>别名名称</span>
             <input

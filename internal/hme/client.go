@@ -703,8 +703,13 @@ func parseAliasList(body string) []Alias {
 			AnonymousID: firstNonEmpty(item.Get("anonymousId").String(), item.Get("id").String()),
 			Label:       firstNonEmpty(item.Get("label").String(), meta.Get("label").String()),
 			Active:      active,
-			CreatedAt:   firstNonEmpty(item.Get("createTimestamp").String(), item.Get("createdAt").String()),
-			ForwardTo:   item.Get("forwardToEmail").String(),
+			CreatedAt: firstNonEmpty(
+				item.Get("createTimestamp").String(),
+				item.Get("createdAt").String(),
+				meta.Get("createTimestamp").String(),
+				meta.Get("createdAt").String(),
+			),
+			ForwardTo: item.Get("forwardToEmail").String(),
 		})
 		return true
 	})

@@ -195,7 +195,9 @@ h1, h2, h3, strong { font-weight: 650; }
   padding: 4px 0;
   border-bottom: 1px solid var(--line-soft);
 }
-.alias-local-summary { display: block; margin-top: 4px; color: var(--text-3); font-size: 11px; }
+.alias-created-at, .alias-local-summary { display: block; margin-top: 4px; color: var(--text-3); font-size: 11px; }
+.alias-created-at { color: var(--text-4); font-variant-numeric: tabular-nums; }
+.editor-created-at { margin: -12px 0 20px; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .alias-select { flex: 0 0 auto; }
 .alias-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .alias-actions .button.small { min-height: 44px; }
