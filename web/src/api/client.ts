@@ -208,6 +208,7 @@ export const api = {
   restoreAccount: (id: string) => request<{ id: string; status: string }>('POST', `/api/accounts/${id}/restore`),
 
   setAppPassword: (id: string, icloudEmail: string, appPassword: string) => request('POST', `/api/accounts/${id}/password`, { icloud_email: icloudEmail, app_password: appPassword }),
+  getAppPassword: (id: string) => request<{ icloud_email: string; app_password: string; configured: boolean }>('GET', `/api/accounts/${id}/password`),
   updateCookies: (id: string, cookies: Record<string, string>) => request('PUT', `/api/accounts/${id}/cookies`, { cookies }),
 
   loginStart: (id: string, password: string) => request<LoginStartResult>('POST', `/api/accounts/${id}/login/start`, { password }),
@@ -247,4 +248,5 @@ export const api = {
   deleteMessage: (accountId: string, uid: string, folder: string | undefined, source: InboxData['method'], alias = '') => request('DELETE', `/api/inbox/message?account_id=${encodeURIComponent(accountId)}&uid=${uid}${folder ? `&folder=${encodeURIComponent(folder)}` : ''}&source=${source}&alias=${encodeURIComponent(alias)}`),
 	deleteMessages: (accountId: string, source: InboxData['method'], messages: Array<{ uid: string; folder?: string; alias?: string }>) => request<BatchMessageDeleteResult>('POST', '/api/inbox/messages/delete', { account_id: accountId, source, messages }),
 	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
+	getForwardIMAP: (accountId: string) => request<{ host?: string; port?: number; email?: string; password?: string; mailboxes?: string[]; configured: boolean }>('GET', `/api/accounts/${accountId}/forward-imap`),
 }

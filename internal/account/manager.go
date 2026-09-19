@@ -492,6 +492,36 @@ func (m *Manager) GetAccount(id string) (*Account, bool) {
 	return &cp, true
 }
 
+// AppPassword returns the saved iCloud IMAP credentials for an account.
+// Callers must still enforce ownership at the HTTP layer; this method only
+// provides a synchronized copy for that already-authorized request.
+func (m *Manager) AppPassword(id string) (icloudEmail, appPassword string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return "", "", false
+	}
+	return acc.ICloudEmail, acc.AppPassword, true
+}
+
+// ForwardIMAP returns a copy of the saved forwarding mailbox configuration.
+// The HTTP handler exposes it only through the authenticated owner route.
+func (m *Manager) ForwardIMAP(id string) (*ForwardIMAPConfig, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return nil, false
+	}
+	if acc.ForwardIMAP == nil {
+		return nil, true
+	}
+	config := *acc.ForwardIMAP
+	config.Mailboxes = append([]string(nil), acc.ForwardIMAP.Mailboxes...)
+	return &config, true
+}
+
 // ListAccounts 返回所有账号(脱敏,不含 Cookies),按活跃状态排序。
 func (m *Manager) ListAccounts() []*Account {
 	m.mu.Lock()

@@ -237,6 +237,24 @@ type setPwdReq struct {
 	AppPassword string `json:"app_password" binding:"required"`
 }
 
+// getAppPassword is intentionally a separate, authenticated endpoint. Account
+// list responses keep credentials redacted, while the owner may reveal the
+// saved value on demand in the account detail drawer.
+func (s *Server) getAppPassword(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := c.Param("id")
+	icloudEmail, appPassword, found := s.mgr.AppPassword(id)
+	if !found {
+		fail(c, http.StatusNotFound, "账号不存在: "+id)
+		return
+	}
+	ok(c, gin.H{
+		"icloud_email": icloudEmail,
+		"app_password": appPassword,
+		"configured":   strings.TrimSpace(appPassword) != "",
+	})
+}
+
 func (s *Server) setAppPassword(c *gin.Context) {
 	id := c.Param("id")
 	var req setPwdReq
@@ -257,6 +275,28 @@ type setForwardIMAPReq struct {
 	Email     string   `json:"email" binding:"required"`
 	Password  string   `json:"password" binding:"required"`
 	Mailboxes []string `json:"mailboxes"`
+}
+
+func (s *Server) getForwardIMAP(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := c.Param("id")
+	config, found := s.mgr.ForwardIMAP(id)
+	if !found {
+		fail(c, http.StatusNotFound, "账号不存在: "+id)
+		return
+	}
+	if config == nil {
+		ok(c, gin.H{"configured": false})
+		return
+	}
+	ok(c, gin.H{
+		"host":       config.Host,
+		"port":       config.Port,
+		"email":      config.Email,
+		"password":   config.Password,
+		"mailboxes":  config.Mailboxes,
+		"configured": strings.TrimSpace(config.Password) != "",
+	})
 }
 
 func (s *Server) setForwardIMAP(c *gin.Context) {

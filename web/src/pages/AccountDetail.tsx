@@ -3012,7 +3012,22 @@ function ForwardIMAPForm({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(true);
   const saved = account?.forward_imap;
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void api.getForwardIMAP(accountId).then((config) => {
+      if (!cancelled) setPassword(config.password || "");
+    }).catch((caught) => {
+      if (!cancelled) setError(errorText(caught));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [accountId]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -3025,7 +3040,7 @@ function ForwardIMAPForm({
         host: values.host.trim(),
         port: Number(values.port || 993),
         email: values.email.trim(),
-        password: values.password,
+        password,
         mailboxes: values.mailboxes
           .split(",")
           .map((item) => item.trim())
@@ -3084,8 +3099,10 @@ function ForwardIMAPForm({
         <span>应用专用密码或授权码</span>
         <PasswordInput
           name="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
           placeholder={
-            account?.has_forward_imap ? "重新输入以更新配置" : "请输入授权码"
+            account?.has_forward_imap ? "已保存，可直接使用或修改" : "请输入授权码"
           }
           autoComplete="current-password"
           required
@@ -3108,8 +3125,8 @@ function ForwardIMAPForm({
         </div>
       )}
       <div className="drawer-actions">
-        <button className="button primary" type="submit" disabled={busy}>
-          {busy ? "正在验证…" : "验证并保存"}
+        <button className="button primary" type="submit" disabled={busy || loading || !password}>
+          {loading ? "正在读取配置…" : busy ? "正在验证…" : "验证并保存"}
           <Icon name="check" size={16} />
         </button>
       </div>
@@ -3127,19 +3144,30 @@ function AppPasswordForm({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const savedEmail = account?.icloud_email || "";
-  const defaultEmail = /@(icloud\.com|me\.com|mac\.com)$/i.test(savedEmail)
-    ? savedEmail
-    : "";
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void api.getAppPassword(accountId).then((saved) => {
+      if (cancelled) return;
+      setEmail(saved.icloud_email || "");
+      setPassword(saved.app_password || "");
+    }).catch((caught) => {
+      if (!cancelled) setError(errorText(caught));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [accountId]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError("");
-    const values = Object.fromEntries(
-      new FormData(event.currentTarget).entries(),
-    ) as Record<string, string>;
     try {
-      await api.setAppPassword(accountId, values.email, values.password);
+      await api.setAppPassword(accountId, email, password);
       onDone("App 专用密码验证通过，已启用 IMAP 阅读。");
     } catch (e) {
       setError((e as Error).message);
@@ -3158,7 +3186,8 @@ function AppPasswordForm({
         <input
           name="email"
           type="email"
-          defaultValue={defaultEmail}
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           placeholder="name@icloud.com"
           pattern=".+@(icloud\.com|me\.com|mac\.com)"
           title="请输入 @icloud.com、@me.com 或 @mac.com 邮箱"
@@ -3170,9 +3199,11 @@ function AppPasswordForm({
         <span>App 专用密码</span>
         <PasswordInput
           name="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
           placeholder={
             account?.has_app_password
-              ? "重新输入以更新配置"
+              ? "已保存，可直接使用或修改"
               : "xxxx-xxxx-xxxx-xxxx"
           }
           autoComplete="current-password"
@@ -3185,8 +3216,8 @@ function AppPasswordForm({
         </div>
       )}
       <div className="drawer-actions">
-        <button className="button primary" type="submit" disabled={busy}>
-          {busy ? "验证中…" : "验证并启用邮件"}
+        <button className="button primary" type="submit" disabled={busy || loading || !email || !password}>
+          {loading ? "正在读取配置…" : busy ? "验证中…" : account?.has_app_password ? "保存并验证" : "验证并启用邮件"}
           <Icon name="check" size={16} />
         </button>
       </div>

@@ -92,7 +92,9 @@ func (s *Server) register() {
 		authed.PUT("/accounts/:id/groups-order", s.reorderOrganizerGroups)
 		authed.DELETE("/accounts/:id/groups/:group_id", s.deleteOrganizerGroup)
 		authed.PUT("/accounts/:id/alias-meta", s.updateAliasMetadata)
+		authed.GET("/accounts/:id/password", s.getAppPassword)
 		authed.POST("/accounts/:id/password", s.setAppPassword)
+		authed.GET("/accounts/:id/forward-imap", s.getForwardIMAP)
 		authed.POST("/accounts/:id/forward-imap", s.setForwardIMAP)
 		authed.PUT("/accounts/:id/cookies", s.updateCookies)
 
