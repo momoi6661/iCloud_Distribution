@@ -48,17 +48,19 @@ func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (str
 	if err != nil {
 		return "", nil, err
 	}
-	var messages []mail.Message
-	var readErr error
-	if alias != "" {
-		messages, readErr = mc.ListForwardedByAlias(alias, folders, limit, days)
-	} else {
-		// Combined inbox means the configured mailbox as-is. Do not fetch the
-		// iCloud alias list and search every alias: that is slow and drops
-		// ordinary messages sent to the forwarding mailbox.
-		messages, readErr = mc.ListFolders(folders, limit, days)
-	}
+	messages, readErr := listForwardInboxMessages(mc, alias, folders, limit, days)
 	unlock.Unlock()
+	if readErr != nil {
+		// Gmail and other IMAP providers can close or invalidate the selected
+		// mailbox after EXPUNGE. Do not keep reusing that stale pooled socket;
+		// reconnect once so the next auto-refresh can recover by itself.
+		s.mgr.DropForwardIMAP(accountID)
+		mc, unlock, folders, err = s.mgr.AcquireForwardIMAP(accountID)
+		if err == nil {
+			messages, readErr = listForwardInboxMessages(mc, alias, folders, limit, days)
+			unlock.Unlock()
+		}
+	}
 	if readErr != nil {
 		return "", nil, readErr
 	}
@@ -67,6 +69,16 @@ func (s *Server) readForwardInbox(accountID, alias string, limit, days int) (str
 	}
 	mail.SortMessagesNewest(messages)
 	return "forward_imap", messages, nil
+}
+
+func listForwardInboxMessages(mc *mail.Client, alias string, folders []string, limit, days int) ([]mail.Message, error) {
+	if alias != "" {
+		return mc.ListForwardedByAlias(alias, folders, limit, days)
+	}
+	// Combined inbox means the configured mailbox as-is. Do not fetch the
+	// iCloud alias list and search every alias: that is slow and drops ordinary
+	// messages sent to the forwarding mailbox.
+	return mc.ListFolders(folders, limit, days)
 }
 
 func (s *Server) readICloudIMAPInbox(accountID, alias string, limit, days int) (string, []mail.Message, error) {
