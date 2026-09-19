@@ -108,6 +108,8 @@ h1, h2, h3, strong { font-weight: 650; }
   background: var(--ink-800);
 }
 .detail-identity { flex: 1; min-width: 0; }
+.detail-account-copy { min-width: 0; }
+.detail-account-summary { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .detail-identity h1 {
   margin: 0 0 4px;
   font-size: 19px;
@@ -525,20 +527,19 @@ h1, h2, h3, strong { font-weight: 650; }
   .public-theme-toggle { min-height: 44px; }
 }
 
-/* Keep account status and alias load in one visual group, with account actions below. */
+/* Account health belongs with the account identity; the right side is actions only. */
+.detail-identity {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
 .detail-state {
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
   align-items: center;
   justify-content: end;
-  flex: 0 1 560px;
-  width: min(560px, 100%);
-  gap: 8px 14px;
+  flex: 0 0 auto;
+  gap: 12px;
 }
-.detail-state > :nth-child(1) { grid-column: 1; grid-row: 1; justify-self: end; }
-.detail-state > :nth-child(2) { grid-column: 2; grid-row: 1; }
-.detail-state > :nth-child(3) { grid-column: 1; grid-row: 2; justify-self: end; }
-.mail-config-trigger { grid-column: 2; grid-row: 2; justify-self: end; }
 .mail-config-panel { padding-bottom: 24px; }
 .mail-config-summary { display: grid; gap: 6px; margin: 0 24px 18px; padding: 14px; background: var(--ink-900); border: 1px solid var(--line-soft); border-left: 2px solid var(--mint); border-radius: 6px; }
 .mail-config-summary strong { color: var(--text); font-size: 13px; }
@@ -553,14 +554,14 @@ h1, h2, h3, strong { font-weight: 650; }
 @media (max-width: 1320px) {
   .detail-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; }
   .detail-identity { grid-column: 2; }
-  .detail-state { grid-column: 2; width: 100%; max-width: none; }
+  .detail-state { grid-column: 2; width: 100%; justify-content: flex-start; }
 }
 
 @media (max-width: 760px) {
-  .detail-state { grid-column: 1 / -1; grid-template-columns: 1fr auto; width: 100%; padding-left: 0; justify-content: stretch; }
-  .detail-state > :nth-child(1), .detail-state > :nth-child(2) { grid-column: auto; grid-row: auto; justify-self: stretch; }
-  .detail-state > :nth-child(3) { grid-column: 1 / -1; grid-row: auto; justify-self: start; }
-  .mail-config-trigger { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; }
+  .detail-identity { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .detail-account-summary { gap: 12px; }
+  .detail-state { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; width: 100%; padding-left: 0; }
+  .mail-config-trigger { width: 100%; }
   .mail-config-tabs { margin-inline: 16px; }
   .mail-config-summary, .mail-config-method { margin-inline: 16px; }
   .mail-config-method-row { align-items: flex-start; flex-direction: column; }

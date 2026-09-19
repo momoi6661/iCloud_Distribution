@@ -1648,26 +1648,28 @@ export default function AccountDetailPage({
           <Icon name="back" size={16} />
         </button>
         <div className="detail-identity">
-          <div>
+          <div className="detail-account-copy">
             <h1>{account?.name}</h1>
             <span className="mono detail-email">
               {account?.real_email || account?.icloud_email || account?.id}
             </span>
           </div>
+          <div className="detail-account-summary">
+            <span
+              className={`status status-${account?.status === "active" ? "ready" : account?.status === "disabled" ? "disabled" : "pending"}`}
+            >
+              {account?.status === "active"
+                ? "正常"
+                : account?.status === "disabled"
+                  ? "已禁用"
+                  : "待处理"}
+            </span>
+            <strong className="alias-count">
+              {aliasLoad.active} / {aliasLoad.total} 个别名
+            </strong>
+          </div>
         </div>
         <div className="detail-state">
-          <span
-            className={`status status-${account?.status === "active" ? "ready" : account?.status === "disabled" ? "disabled" : "pending"}`}
-          >
-            {account?.status === "active"
-              ? "正常"
-              : account?.status === "disabled"
-                ? "已禁用"
-                : "待处理"}
-          </span>
-          <strong className="alias-count">
-            {aliasLoad.active} / {aliasLoad.total} 个别名
-          </strong>
           <span className="detail-meta">{account?.host || "icloud.com"}</span>
           <button
             className="button small secondary mail-config-trigger"
