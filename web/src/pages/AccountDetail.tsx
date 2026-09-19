@@ -52,6 +52,7 @@ const compactDateText = (date?: string) => {
   const parsed = parseDateValue(date);
   if (!parsed) return "—";
   const parts = new Intl.DateTimeFormat("zh-CN", {
+    year: "2-digit",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -60,7 +61,7 @@ const compactDateText = (date?: string) => {
   }).formatToParts(parsed);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((item) => item.type === type)?.value || "";
-  return `${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
 };
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
