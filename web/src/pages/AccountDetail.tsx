@@ -1703,34 +1703,38 @@ export default function AccountDetailPage({
             {aliasLoad.active} / {aliasLoad.total} 个别名
           </strong>
           <span className="detail-meta">{account?.host || "icloud.com"}</span>
-          <SelectMenu
-            value={mailMethod}
-            options={mailMethodOptions}
-            onChange={changeMailMethod}
-            ariaLabel="选择默认邮件读取方式"
-            className="mail-method-menu detail-mail-method"
-          />
-          <button
-            className="button small primary"
-            onClick={() => void saveMailMethod()}
-            disabled={mailMethodSaving || mailMethod === "auto"}
-          >
-            {mailMethodSaving ? "保存中…" : "保存读取方式"}
-          </button>
-          <button
-            className="button small secondary"
-            onClick={() => setPasswordOpen(true)}
-          >
-            <Icon name="settings" size={15} />
-            iCloud IMAP
-          </button>
-          <button
-            className="button small secondary"
-            onClick={() => setForwardOpen(true)}
-          >
-            <Icon name="mail" size={15} />
-            转发邮箱 IMAP
-          </button>
+          <div className="mail-method-actions">
+            <SelectMenu
+              value={mailMethod}
+              options={mailMethodOptions}
+              onChange={changeMailMethod}
+              ariaLabel="选择默认邮件读取方式"
+              className="mail-method-menu detail-mail-method"
+            />
+            <button
+              className="button small primary"
+              onClick={() => void saveMailMethod()}
+              disabled={mailMethodSaving || mailMethod === "auto"}
+            >
+              {mailMethodSaving ? "保存中…" : "保存读取方式"}
+            </button>
+          </div>
+          <div className="imap-config-actions">
+            <button
+              className="button small secondary"
+              onClick={() => setPasswordOpen(true)}
+            >
+              <Icon name="settings" size={15} />
+              iCloud IMAP
+            </button>
+            <button
+              className="button small secondary"
+              onClick={() => setForwardOpen(true)}
+            >
+              <Icon name="mail" size={15} />
+              转发邮箱 IMAP
+            </button>
+          </div>
         </div>
       </section>
       {mailMethodNotice && <div className="inline-banner">{mailMethodNotice}</div>}

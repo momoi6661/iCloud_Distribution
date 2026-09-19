@@ -528,7 +528,7 @@ h1, h2, h3, strong { font-weight: 650; }
 /* Keep account status and mail configuration in two deliberate rows. */
 .detail-state {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) auto auto;
+  grid-template-columns: minmax(190px, 1fr) auto;
   align-items: center;
   flex: 0 1 560px;
   width: min(560px, 100%);
@@ -536,10 +536,10 @@ h1, h2, h3, strong { font-weight: 650; }
 }
 .detail-state > :nth-child(1) { grid-column: 1; grid-row: 1; justify-self: start; }
 .detail-state > :nth-child(2) { grid-column: 2; grid-row: 1; }
-.detail-state > :nth-child(3) { grid-column: 3; grid-row: 1; justify-self: end; }
-.detail-state > :nth-child(4) { grid-column: 1; grid-row: 2; width: 100%; }
-.detail-state > :nth-child(5) { grid-column: 2; grid-row: 2; }
-.detail-state > :nth-child(6) { grid-column: 3; grid-row: 2; }
+.detail-state > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+.mail-method-actions { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mail-method-actions .detail-mail-method { flex: 1 1 auto; min-width: 0; }
+.imap-config-actions { grid-column: 1 / -1; grid-row: 4; display: flex; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 1320px) {
   .detail-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; }
@@ -549,9 +549,10 @@ h1, h2, h3, strong { font-weight: 650; }
 
 @media (max-width: 760px) {
   .detail-state { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; width: 100%; padding-left: 0; }
-  .detail-state > :nth-child(1), .detail-state > :nth-child(2), .detail-state > :nth-child(3), .detail-state > :nth-child(4), .detail-state > :nth-child(5), .detail-state > :nth-child(6) { grid-column: auto; grid-row: auto; justify-self: stretch; }
-  .detail-state > :nth-child(3), .detail-state > :nth-child(4) { grid-column: 1 / -1; }
-  .detail-state .button { width: 100%; }
+  .detail-state > :nth-child(1), .detail-state > :nth-child(2) { grid-column: auto; grid-row: auto; justify-self: stretch; }
+  .detail-state > :nth-child(3) { grid-column: 1 / -1; grid-row: auto; justify-self: start; }
+  .mail-method-actions, .imap-config-actions { grid-column: 1 / -1; grid-row: auto; width: 100%; }
+  .mail-method-actions .button, .imap-config-actions .button { flex: 1; }
   .share-toolbar { align-items: stretch; flex-direction: column; padding-inline: 16px; }
   .share-search, .share-filter-menu { width: 100%; max-width: none; flex-basis: auto; }
   .share-batch-toolbar { margin: 12px 16px 16px; }
