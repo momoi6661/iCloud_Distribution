@@ -48,9 +48,10 @@ export interface Account {
   last_error?: string
   created_at: string
   has_cookies?: boolean
-  has_app_password?: boolean
+	has_app_password?: boolean
 	forward_imap?: { host: string; port: number; email: string; mailboxes?: string[] }
 	has_forward_imap?: boolean
+	mail_read_method?: MailReadMethod
 }
 
 export interface Alias {
@@ -249,4 +250,5 @@ export const api = {
 	deleteMessages: (accountId: string, source: InboxData['method'], messages: Array<{ uid: string; folder?: string; alias?: string }>) => request<BatchMessageDeleteResult>('POST', '/api/inbox/messages/delete', { account_id: accountId, source, messages }),
 	setForwardIMAP: (accountId: string, value: { host: string; port: number; email: string; password: string; mailboxes: string[] }) => request('POST', `/api/accounts/${accountId}/forward-imap`, value),
 	getForwardIMAP: (accountId: string) => request<{ host?: string; port?: number; email?: string; password?: string; mailboxes?: string[]; configured: boolean }>('GET', `/api/accounts/${accountId}/forward-imap`),
+	setMailReadMethod: (accountId: string, method: MailReadMethod) => request<{ id: string; method: MailReadMethod }>('PUT', `/api/accounts/${accountId}/mail-read-method`, { method }),
 }

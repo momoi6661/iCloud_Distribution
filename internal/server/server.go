@@ -96,6 +96,7 @@ func (s *Server) register() {
 		authed.POST("/accounts/:id/password", s.setAppPassword)
 		authed.GET("/accounts/:id/forward-imap", s.getForwardIMAP)
 		authed.POST("/accounts/:id/forward-imap", s.setForwardIMAP)
+		authed.PUT("/accounts/:id/mail-read-method", s.setMailReadMethod)
 		authed.PUT("/accounts/:id/cookies", s.updateCookies)
 
 		// ===== 两段式自动授权 =====

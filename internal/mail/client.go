@@ -122,37 +122,30 @@ func (c *Client) ListForwardedByAlias(alias string, folders []string, limit, day
 	}
 	target := strings.ToLower(strings.TrimSpace(alias))
 	var out []Message
-	var lastErr error
 	for _, folder := range folders {
 		folder = strings.TrimSpace(folder)
 		if folder == "" {
 			continue
 		}
 		if _, err := c.cli.Select(folder, true); err != nil {
-			lastErr = err
-			continue
+			return nil, fmt.Errorf("IMAP 文件夹 %q 读取失败: %w", folder, err)
 		}
 		uids, err := c.searchForwardedUIDs(target, days)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, fmt.Errorf("IMAP 文件夹 %q 搜索失败: %w", folder, err)
 		}
 		if len(uids) > limit {
 			uids = uids[len(uids)-limit:]
 		}
 		messages, err := c.fetchForwardedMessages(uids, folder, target)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, fmt.Errorf("IMAP 文件夹 %q 邮件读取失败: %w", folder, err)
 		}
 		out = append(out, messages...)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Date > out[j].Date })
 	if len(out) > limit {
 		out = out[:limit]
-	}
-	if len(out) == 0 && lastErr != nil {
-		return nil, lastErr
 	}
 	return out, nil
 }
@@ -482,6 +475,24 @@ func (c *Client) SelectFolder(folder string) error {
 	return err
 }
 
+// ValidateFolders verifies every configured mailbox while the authenticated
+// connection is still open, so a typo is reported while saving the config.
+func (c *Client) ValidateFolders(folders []string) error {
+	if c.cli == nil {
+		return fmt.Errorf("未连接")
+	}
+	for _, folder := range folders {
+		folder = strings.TrimSpace(folder)
+		if folder == "" {
+			continue
+		}
+		if _, err := c.cli.Select(folder, true); err != nil {
+			return fmt.Errorf("IMAP 文件夹 %q 读取失败: %w", folder, err)
+		}
+	}
+	return nil
+}
+
 // UidFetch 底层 UID 拉取 (调试用)。
 func (c *Client) UidFetch(seqset *imap.SeqSet, items []imap.FetchItem, messages chan *imap.Message) error {
 	if c.cli == nil {
@@ -527,7 +538,6 @@ func (c *Client) ListFolders(folders []string, limit int, days int) ([]Message, 
 		folders = []string{"INBOX"}
 	}
 	var out []Message
-	var lastErr error
 	for _, folder := range folders {
 		folder = strings.TrimSpace(folder)
 		if folder == "" {
@@ -535,17 +545,13 @@ func (c *Client) ListFolders(folders []string, limit int, days int) ([]Message, 
 		}
 		messages, err := c.ListFolder(folder, limit, days)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, fmt.Errorf("IMAP 文件夹 %q 读取失败: %w", folder, err)
 		}
 		out = append(out, messages...)
 	}
 	SortMessagesNewest(out)
 	if len(out) > limit {
 		out = out[:limit]
-	}
-	if len(out) == 0 && lastErr != nil {
-		return nil, lastErr
 	}
 	return out, nil
 }
@@ -560,15 +566,13 @@ func (c *Client) CountFolders(folders []string, days int) (int, error) {
 		folders = []string{"INBOX"}
 	}
 	total := 0
-	var lastErr error
 	for _, folder := range folders {
 		folder = strings.TrimSpace(folder)
 		if folder == "" {
 			continue
 		}
 		if _, err := c.cli.Select(folder, true); err != nil {
-			lastErr = err
-			continue
+			return 0, fmt.Errorf("IMAP 文件夹 %q 读取失败: %w", folder, err)
 		}
 		criteria := imap.NewSearchCriteria()
 		if days > 0 {
@@ -576,13 +580,9 @@ func (c *Client) CountFolders(folders []string, days int) (int, error) {
 		}
 		uids, err := c.cli.UidSearch(criteria)
 		if err != nil {
-			lastErr = err
-			continue
+			return 0, fmt.Errorf("IMAP 文件夹 %q 搜索失败: %w", folder, err)
 		}
 		total += len(uids)
-	}
-	if total == 0 && lastErr != nil {
-		return 0, lastErr
 	}
 	return total, nil
 }

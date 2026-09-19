@@ -42,6 +42,7 @@ type Account struct {
 	HasCookies     bool                     `json:"has_cookies,omitempty"`
 	HasAppPassword bool                     `json:"has_app_password,omitempty"`
 	HasForwardIMAP bool                     `json:"has_forward_imap,omitempty"`
+	MailReadMethod string                   `json:"mail_read_method,omitempty"`
 }
 
 func (m *Manager) AssignMissingOwners(ownerID string) error {
@@ -522,6 +523,40 @@ func (m *Manager) ForwardIMAP(id string) (*ForwardIMAPConfig, bool) {
 	return &config, true
 }
 
+func (m *Manager) MailReadMethod(id string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return "", false
+	}
+	return acc.MailReadMethod, true
+}
+
+func (m *Manager) SetMailReadMethod(id, method string) error {
+	method = strings.TrimSpace(method)
+	if method != "forward_imap" && method != "imap" && method != "web_api" {
+		return fmt.Errorf("不支持的邮件读取方式: %s", method)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
+	if method == "forward_imap" && (acc.ForwardIMAP == nil || strings.TrimSpace(acc.ForwardIMAP.Password) == "") {
+		return fmt.Errorf("尚未配置转发邮箱 IMAP")
+	}
+	if method == "imap" && strings.TrimSpace(acc.AppPassword) == "" {
+		return fmt.Errorf("尚未配置 iCloud App 专用密码")
+	}
+	acc.MailReadMethod = method
+	return m.save()
+}
+
 // ListAccounts 返回所有账号(脱敏,不含 Cookies),按活跃状态排序。
 func (m *Manager) ListAccounts() []*Account {
 	m.mu.Lock()
@@ -942,6 +977,10 @@ func (m *Manager) SetForwardIMAP(id string, config ForwardIMAPConfig) error {
 
 	client := mail.NewGenericClient(config.Host, config.Port, config.Email, config.Password)
 	if err := client.Connect(); err != nil {
+		return err
+	}
+	if err := client.ValidateFolders(config.Mailboxes); err != nil {
+		client.Disconnect()
 		return err
 	}
 	client.Disconnect()

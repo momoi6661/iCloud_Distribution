@@ -21,6 +21,11 @@ import (
 // 转发邮箱 IMAP > iCloud IMAP > Web API 的顺序自动选择。
 // 供 /api/inbox 与公开分享端点共用。
 func (s *Server) readInbox(accountID, alias string, limit, days int, preferred string) (string, []mail.Message, error) {
+	if preferred == "" || preferred == "auto" {
+		if saved, ok := s.mgr.MailReadMethod(accountID); ok && saved != "" {
+			preferred = saved
+		}
+	}
 	switch preferred {
 	case "forward_imap":
 		return s.readForwardInbox(accountID, alias, limit, days)
@@ -208,7 +213,22 @@ func (s *Server) inboxCount(c *gin.Context) {
 		return
 	}
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
-	if alias != "" {
+	method := c.Query("method")
+	if method == "" || method == "auto" {
+		if saved, ok := s.mgr.MailReadMethod(accountID); ok {
+			method = saved
+		}
+	}
+	if method == "web_api" {
+		_, messages, err := s.readWebInbox(accountID, alias, 100, days)
+		if err != nil {
+			fail(c, http.StatusBadGateway, "Web API 读取邮件数量失败: "+err.Error())
+			return
+		}
+		ok(c, gin.H{"account_id": accountID, "alias": alias, "count": len(messages), "method": "web_api"})
+		return
+	}
+	if method == "forward_imap" && alias != "" {
 		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
 			count, countErr := mc.CountForwardedByAlias(alias, folders, days)
 			unlock.Unlock()
@@ -218,7 +238,31 @@ func (s *Server) inboxCount(c *gin.Context) {
 			}
 		}
 	}
-	if alias == "" {
+	if method == "forward_imap" && alias == "" {
+		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
+			count, countErr := mc.CountFolders(folders, days)
+			unlock.Unlock()
+			if countErr == nil {
+				ok(c, gin.H{"account_id": accountID, "alias": alias, "count": count, "method": "forward_imap"})
+				return
+			}
+		}
+	}
+	if method != "imap" && method != "" {
+		fail(c, http.StatusBadRequest, "已保存的邮件读取方式不可用，请检查对应 IMAP 配置")
+		return
+	}
+	if method == "" && alias != "" {
+		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
+			count, countErr := mc.CountForwardedByAlias(alias, folders, days)
+			unlock.Unlock()
+			if countErr == nil {
+				ok(c, gin.H{"account_id": accountID, "alias": alias, "count": count, "method": "forward_imap"})
+				return
+			}
+		}
+	}
+	if method == "" && alias == "" {
 		if mc, unlock, folders, forwardErr := s.mgr.AcquireForwardIMAP(accountID); forwardErr == nil {
 			count, countErr := mc.CountFolders(folders, days)
 			unlock.Unlock()

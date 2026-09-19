@@ -317,6 +317,23 @@ func (s *Server) setForwardIMAP(c *gin.Context) {
 	ok(c, gin.H{"id": id, "host": config.Host, "port": config.Port, "email": config.Email})
 }
 
+type setMailReadMethodReq struct {
+	Method string `json:"method" binding:"required"`
+}
+
+func (s *Server) setMailReadMethod(c *gin.Context) {
+	var req setMailReadMethodReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, "参数错误: method 必填")
+		return
+	}
+	if err := s.mgr.SetMailReadMethod(c.Param("id"), req.Method); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"id": c.Param("id"), "method": strings.TrimSpace(req.Method)})
+}
+
 type updateCookiesReq struct {
 	Cookies map[string]string `json:"cookies" binding:"required"`
 }

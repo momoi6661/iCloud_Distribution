@@ -10,6 +10,7 @@ import {
   type InboxData,
   type MailMessage,
   type MailReadPreference,
+  type MailReadMethod,
   type OrganizerGroup,
   type ShareLink,
 } from "../api/client";
@@ -456,7 +457,9 @@ export default function AccountDetailPage({
   );
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState(requestedAlias);
-  const [mailMethod, setMailMethod] = useState<MailReadPreference>("auto");
+  const [mailMethod, setMailMethod] = useState<MailReadPreference>("web_api");
+  const [mailMethodSaving, setMailMethodSaving] = useState(false);
+  const [mailMethodNotice, setMailMethodNotice] = useState("");
   const [mailRangeDays, setMailRangeDays] = useState<MailRangeDays>(7);
   const [autoRefreshMs, setAutoRefreshMs] = useState<RefreshInterval>(() => {
     const saved = Number(localStorage.getItem("mail-auto-refresh-ms"));
@@ -556,7 +559,9 @@ export default function AccountDetailPage({
           api.listShares(id),
           api.getOrganizer(id),
         ]);
-      setAccount(accounts.find((item) => item.id === id) || null);
+      const nextAccount = accounts.find((item) => item.id === id) || null;
+      setAccount(nextAccount);
+      setMailMethod(nextAccount?.mail_read_method || "web_api");
       setAliases(aliasResult.aliases || []);
       setShares(shareResultData || []);
       setGroups(organizer.groups || []);
@@ -573,14 +578,14 @@ export default function AccountDetailPage({
     load();
   }, [id]);
   useEffect(() => {
-    if (requestedTab !== "inbox") return;
+    if (requestedTab !== "inbox" || !account) return;
     const request = ++inboxRequest.current;
     setTab("inbox");
     setAlias(requestedAlias);
     setInboxCount(cachedInboxCount(id, requestedAlias));
     setBusy(true);
     api
-      .inbox(id, requestedAlias, 20, 7, mailMethod, 1)
+      .inbox(id, requestedAlias, 20, 7, account.mail_read_method || mailMethod, 1)
       .then((value) => {
         const normalized = normalizeInbox(value);
         rememberInboxCount(id, requestedAlias, normalized.count);
@@ -597,7 +602,7 @@ export default function AccountDetailPage({
       .finally(() => {
         if (request === inboxRequest.current) setBusy(false);
       });
-  }, [id]);
+  }, [account?.id, account?.mail_read_method, id, requestedAlias, requestedTab]);
   const groupNames = useMemo(
     () => Object.fromEntries(groups.map((group) => [group.id, group.name])),
     [groups],
@@ -613,7 +618,6 @@ export default function AccountDetailPage({
   const visibleAliases = tab === "disabled" ? disabledAliases : activeAliases;
   const mailMethodOptions = useMemo(
     () => [
-      { value: "auto", label: "自动选择" },
       ...(account?.has_forward_imap
         ? [{ value: "forward_imap", label: "转发邮箱 IMAP（列表 + 正文）" }]
         : []),
@@ -878,6 +882,20 @@ export default function AccountDetailPage({
     const next = value as MailReadPreference;
     setMailMethod(next);
     if (tab === "inbox") void openInbox(alias, next);
+  };
+  const saveMailMethod = async () => {
+    if (mailMethod === "auto") return;
+    setMailMethodSaving(true);
+    setMailMethodNotice("");
+    try {
+      await api.setMailReadMethod(id, mailMethod as MailReadMethod);
+      setAccount((current) => current ? { ...current, mail_read_method: mailMethod as MailReadMethod } : current);
+      setMailMethodNotice("读取方式已保存到服务器。");
+    } catch (error) {
+      setMailMethodNotice((error as Error).message);
+    } finally {
+      setMailMethodSaving(false);
+    }
   };
   const openMessage = async (item: MailMessage) => {
     const request = ++messageRequest.current;
@@ -1693,6 +1711,13 @@ export default function AccountDetailPage({
             className="mail-method-menu detail-mail-method"
           />
           <button
+            className="button small primary"
+            onClick={() => void saveMailMethod()}
+            disabled={mailMethodSaving || mailMethod === "auto"}
+          >
+            {mailMethodSaving ? "保存中…" : "保存读取方式"}
+          </button>
+          <button
             className="button small secondary"
             onClick={() => setPasswordOpen(true)}
           >
@@ -1708,6 +1733,7 @@ export default function AccountDetailPage({
           </button>
         </div>
       </section>
+      {mailMethodNotice && <div className="inline-banner">{mailMethodNotice}</div>}
       <section className="account-health" aria-label="账号连接状态">
         <div>
           <strong>iCloud 会话</strong>
@@ -3114,10 +3140,10 @@ function ForwardIMAPForm({
         <input
           name="mailboxes"
           defaultValue={(saved?.mailboxes || ["INBOX"]).join(", ")}
-          placeholder="INBOX, Junk"
+          placeholder="INBOX, [Gmail]/垃圾邮件"
         />
         <small>
-          多个文件夹用英文逗号分隔；Gmail 垃圾邮件目录通常为 [Gmail]/Spam。
+          多个文件夹用英文逗号分隔。Gmail 中文账号可尝试「INBOX, [Gmail]/垃圾邮件」；如果仍失败，请以该账号 IMAP LIST 返回的实际名称为准，不要额外填写 spam。
         </small>
       </label>
       {error && (
