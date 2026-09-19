@@ -10,7 +10,6 @@ import {
   type InboxData,
   type MailMessage,
   type MailReadPreference,
-  type MailReadMethod,
   type OrganizerGroup,
   type ShareLink,
 } from "../api/client";
@@ -458,7 +457,6 @@ export default function AccountDetailPage({
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState(requestedAlias);
   const [mailMethod, setMailMethod] = useState<MailReadPreference>("web_api");
-  const [mailMethodSaving, setMailMethodSaving] = useState(false);
   const [mailMethodNotice, setMailMethodNotice] = useState("");
   const [mailRangeDays, setMailRangeDays] = useState<MailRangeDays>(7);
   const [autoRefreshMs, setAutoRefreshMs] = useState<RefreshInterval>(() => {
@@ -486,8 +484,8 @@ export default function AccountDetailPage({
   const [batchGroupId, setBatchGroupId] = useState("");
   const [batchNote, setBatchNote] = useState("");
   const [batchResult, setBatchResult] = useState<BatchCreateResult | null>(null);
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [forwardOpen, setForwardOpen] = useState(false);
+  const [mailConfigOpen, setMailConfigOpen] = useState(false);
+  const [mailConfigTab, setMailConfigTab] = useState<"imap" | "forward_imap">("imap");
   const [organizerOpen, setOrganizerOpen] = useState(false);
   const [editorAlias, setEditorAlias] = useState<Alias | null>(null);
   const [editorLabel, setEditorLabel] = useState("");
@@ -616,18 +614,6 @@ export default function AccountDetailPage({
     [aliases],
   );
   const visibleAliases = tab === "disabled" ? disabledAliases : activeAliases;
-  const mailMethodOptions = useMemo(
-    () => [
-      ...(account?.has_forward_imap
-        ? [{ value: "forward_imap", label: "转发邮箱 IMAP（列表 + 正文）" }]
-        : []),
-      ...(account?.has_app_password
-        ? [{ value: "imap", label: "iCloud IMAP（列表 + 正文）" }]
-        : []),
-      { value: "web_api", label: "iCloud Web API（仅列表摘要）" },
-    ],
-    [account?.has_app_password, account?.has_forward_imap],
-  );
   const filteredAliases = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return visibleAliases.filter((item) => {
@@ -878,25 +864,6 @@ export default function AccountDetailPage({
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [alias, autoRefreshMs, inboxPage, mailMethod, mailRangeDays, tab]);
-  const changeMailMethod = (value: string) => {
-    const next = value as MailReadPreference;
-    setMailMethod(next);
-    if (tab === "inbox") void openInbox(alias, next);
-  };
-  const saveMailMethod = async () => {
-    if (mailMethod === "auto") return;
-    setMailMethodSaving(true);
-    setMailMethodNotice("");
-    try {
-      await api.setMailReadMethod(id, mailMethod as MailReadMethod);
-      setAccount((current) => current ? { ...current, mail_read_method: mailMethod as MailReadMethod } : current);
-      setMailMethodNotice("读取方式已保存到服务器。");
-    } catch (error) {
-      setMailMethodNotice((error as Error).message);
-    } finally {
-      setMailMethodSaving(false);
-    }
-  };
   const openMessage = async (item: MailMessage) => {
     const request = ++messageRequest.current;
     setMessage({ ...item, body: "", content_type: "" });
@@ -1512,7 +1479,6 @@ export default function AccountDetailPage({
     setBusy(false);
   };
   const refreshAfterPassword = (messageText: string) => {
-    setPasswordOpen(false);
     setNotice(messageText);
     void load().then(async () => {
       if (tab === "inbox")
@@ -1703,38 +1669,13 @@ export default function AccountDetailPage({
             {aliasLoad.active} / {aliasLoad.total} 个别名
           </strong>
           <span className="detail-meta">{account?.host || "icloud.com"}</span>
-          <div className="mail-method-actions">
-            <SelectMenu
-              value={mailMethod}
-              options={mailMethodOptions}
-              onChange={changeMailMethod}
-              ariaLabel="选择默认邮件读取方式"
-              className="mail-method-menu detail-mail-method"
-            />
-            <button
-              className="button small primary"
-              onClick={() => void saveMailMethod()}
-              disabled={mailMethodSaving || mailMethod === "auto"}
-            >
-              {mailMethodSaving ? "保存中…" : "保存读取方式"}
-            </button>
-          </div>
-          <div className="imap-config-actions">
-            <button
-              className="button small secondary"
-              onClick={() => setPasswordOpen(true)}
-            >
-              <Icon name="settings" size={15} />
-              iCloud IMAP
-            </button>
-            <button
-              className="button small secondary"
-              onClick={() => setForwardOpen(true)}
-            >
-              <Icon name="mail" size={15} />
-              转发邮箱 IMAP
-            </button>
-          </div>
+          <button
+            className="button small secondary mail-config-trigger"
+            onClick={() => setMailConfigOpen(true)}
+          >
+            <Icon name="settings" size={15} />
+            邮件读取配置
+          </button>
         </div>
       </section>
       {mailMethodNotice && <div className="inline-banner">{mailMethodNotice}</div>}
@@ -2401,30 +2342,70 @@ export default function AccountDetailPage({
         </form>
       </SidePanel>
       <SidePanel
-        open={passwordOpen}
-        title="配置 iCloud IMAP"
-        onClose={() => setPasswordOpen(false)}
+        open={mailConfigOpen}
+        title="邮件读取配置"
+        onClose={() => setMailConfigOpen(false)}
       >
-        <AppPasswordForm
-          accountId={id}
-          account={account}
-          onDone={refreshAfterPassword}
-        />
-      </SidePanel>
-      <SidePanel
-        open={forwardOpen}
-        title="配置转发邮箱 IMAP"
-        onClose={() => setForwardOpen(false)}
-      >
-        <ForwardIMAPForm
-          accountId={id}
-          account={account}
-          onDone={(messageText) => {
-            setForwardOpen(false);
-            setNotice(messageText);
-            void load();
-          }}
-        />
+        <div className="mail-config-panel">
+          <div className="mail-config-summary">
+            <span className="eyebrow">当前默认方式</span>
+            <strong>{mailMethodLabel(account?.mail_read_method || (mailMethod === "auto" ? "web_api" : mailMethod))}</strong>
+          </div>
+          <div className="mail-config-tabs" role="tablist" aria-label="邮件配置类型">
+            <button
+              type="button"
+              className={mailConfigTab === "imap" ? "active" : ""}
+              onClick={() => setMailConfigTab("imap")}
+              role="tab"
+              aria-selected={mailConfigTab === "imap"}
+            >
+              iCloud IMAP
+            </button>
+            <button
+              type="button"
+              className={mailConfigTab === "forward_imap" ? "active" : ""}
+              onClick={() => setMailConfigTab("forward_imap")}
+              role="tab"
+              aria-selected={mailConfigTab === "forward_imap"}
+            >
+              转发邮箱 IMAP
+            </button>
+          </div>
+          <div className="mail-config-method">
+            <span className="eyebrow">默认读取方式</span>
+            <div className="mail-config-method-row">
+              <strong>{mailMethodLabel(mailConfigTab)}</strong>
+              {mailMethod !== mailConfigTab && (
+                <button
+                  type="button"
+                  className="button small primary mail-config-save"
+                  onClick={() => {
+                    setMailMethod(mailConfigTab);
+                    void api.setMailReadMethod(id, mailConfigTab).then(() => {
+                      setAccount((current) => current ? { ...current, mail_read_method: mailConfigTab } : current);
+                      setMailMethodNotice("读取方式已保存到服务器。");
+                    }).catch((error) => setMailMethodNotice((error as Error).message));
+                  }}
+                  disabled={false}
+                >
+                  保存
+                </button>
+              )}
+            </div>
+          </div>
+          {mailConfigTab === "imap" ? (
+            <AppPasswordForm accountId={id} account={account} onDone={refreshAfterPassword} />
+          ) : (
+            <ForwardIMAPForm
+              accountId={id}
+              account={account}
+              onDone={(messageText) => {
+                setNotice(messageText);
+                void load();
+              }}
+            />
+          )}
+        </div>
       </SidePanel>
       <SidePanel
         open={shareOpen}
