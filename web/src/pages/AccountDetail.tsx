@@ -612,9 +612,9 @@ export default function AccountDetailPage({
         ? [{ value: "forward_imap", label: "转发邮箱 IMAP" }]
         : []),
       ...(account?.has_app_password
-        ? [{ value: "imap", label: "iCloud IMAP" }]
+        ? [{ value: "imap", label: "iCloud IMAP（列表 + 正文）" }]
         : []),
-      { value: "web_api", label: "iCloud Web API" },
+      { value: "web_api", label: "iCloud Web API（仅列表摘要）" },
     ],
     [account?.has_app_password, account?.has_forward_imap],
   );

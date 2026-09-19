@@ -268,6 +268,10 @@ func (s *Server) getMessage(c *gin.Context) {
 	var unlock interface{ Unlock() }
 	source := c.Query("source")
 	alias := strings.TrimSpace(c.Query("alias"))
+	if source == "web_api" {
+		fail(c, http.StatusBadRequest, "iCloud Web API 只提供邮件列表和摘要，完整正文请切换到 IMAP")
+		return
+	}
 	if source == "forward_imap" {
 		forwardClient, forwardUnlock, _, forwardErr := s.mgr.AcquireForwardIMAP(accountID)
 		mc, unlock, err = forwardClient, forwardUnlock, forwardErr
