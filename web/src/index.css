@@ -108,16 +108,17 @@ h1, h2, h3, strong { font-weight: 650; }
   background: var(--ink-800);
 }
 .detail-identity { flex: 1; min-width: 0; }
-.detail-account-copy { min-width: 0; }
-.detail-account-summary { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.detail-account-copy { display: grid; min-width: 0; gap: 5px; }
+.detail-account-title-row,
+.detail-account-meta-row { display: flex; align-items: center; min-width: 0; gap: 14px; }
 .detail-identity h1 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 19px;
   line-height: 1.15;
   letter-spacing: -.03em;
   font-weight: 700;
 }
-.detail-email { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-email { display: block; max-width: min(380px, 42vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail-state {
   display: flex;
   align-items: center;
@@ -558,8 +559,9 @@ h1, h2, h3, strong { font-weight: 650; }
 }
 
 @media (max-width: 760px) {
-  .detail-identity { align-items: flex-start; flex-direction: column; gap: 10px; }
-  .detail-account-summary { gap: 12px; }
+  .detail-identity { align-items: flex-start; }
+  .detail-account-title-row, .detail-account-meta-row { gap: 10px; }
+  .detail-email { max-width: min(62vw, 320px); }
   .detail-state { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; width: 100%; padding-left: 0; }
   .mail-config-trigger { width: 100%; }
   .mail-config-tabs { margin-inline: 16px; }
