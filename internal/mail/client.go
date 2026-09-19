@@ -528,7 +528,6 @@ func (c *Client) ListFolders(folders []string, limit int, days int) ([]Message, 
 	}
 	var out []Message
 	var lastErr error
-	succeeded := 0
 	for _, folder := range folders {
 		folder = strings.TrimSpace(folder)
 		if folder == "" {
@@ -536,20 +535,16 @@ func (c *Client) ListFolders(folders []string, limit int, days int) ([]Message, 
 		}
 		messages, err := c.ListFolder(folder, limit, days)
 		if err != nil {
-			lastErr = fmt.Errorf("IMAP 文件夹 %q 不可用: %w", folder, err)
+			lastErr = err
 			continue
 		}
-		succeeded++
 		out = append(out, messages...)
 	}
 	SortMessagesNewest(out)
 	if len(out) > limit {
 		out = out[:limit]
 	}
-	// An empty but successfully selected INBOX is still a successful read. A
-	// missing optional folder (for example Gmail's localized Spam folder) must
-	// not turn that result into HTTP 502.
-	if succeeded == 0 && lastErr != nil {
+	if len(out) == 0 && lastErr != nil {
 		return nil, lastErr
 	}
 	return out, nil
@@ -566,14 +561,13 @@ func (c *Client) CountFolders(folders []string, days int) (int, error) {
 	}
 	total := 0
 	var lastErr error
-	succeeded := 0
 	for _, folder := range folders {
 		folder = strings.TrimSpace(folder)
 		if folder == "" {
 			continue
 		}
 		if _, err := c.cli.Select(folder, true); err != nil {
-			lastErr = fmt.Errorf("IMAP 文件夹 %q 不可用: %w", folder, err)
+			lastErr = err
 			continue
 		}
 		criteria := imap.NewSearchCriteria()
@@ -582,13 +576,12 @@ func (c *Client) CountFolders(folders []string, days int) (int, error) {
 		}
 		uids, err := c.cli.UidSearch(criteria)
 		if err != nil {
-			lastErr = fmt.Errorf("读取 IMAP 文件夹 %q 失败: %w", folder, err)
+			lastErr = err
 			continue
 		}
-		succeeded++
 		total += len(uids)
 	}
-	if succeeded == 0 && lastErr != nil {
+	if total == 0 && lastErr != nil {
 		return 0, lastErr
 	}
 	return total, nil
