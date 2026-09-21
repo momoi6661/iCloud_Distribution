@@ -515,6 +515,7 @@ export default function AccountDetailPage({
   const [message, setMessage] = useState<FullMailMessage | null>(null);
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState("");
+  const [messageDeleting, setMessageDeleting] = useState(false);
   const [messageDeleteConfirm, setMessageDeleteConfirm] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [messageBatchDeleteConfirm, setMessageBatchDeleteConfirm] =
@@ -893,9 +894,10 @@ export default function AccountDetailPage({
     setMessageLoading(false);
   };
   const deleteMessage = async () => {
-    if (!message || !inbox || inbox.method === "web_api") return;
+    if (messageDeleting || !message || !inbox || inbox.method === "web_api") return;
     const target = message;
     const targetKey = mailKey(target);
+    setMessageDeleting(true);
     deletingMessages.current.add(targetKey);
     setInbox((current) => current ? { ...current, messages: current.messages.filter((item) => mailKey(item) !== targetKey) } : current);
     setSelectedMessages((current) => current.filter((key) => key !== targetKey));
@@ -910,6 +912,7 @@ export default function AccountDetailPage({
       setNotice(`删除邮件失败：${errorText(e)}`);
     } finally {
       deletingMessages.current.delete(targetKey);
+      setMessageDeleting(false);
     }
   };
   const toggleMessageSelection = (item: MailMessage) => {
@@ -921,12 +924,13 @@ export default function AccountDetailPage({
     );
   };
   const deleteSelectedMessages = async () => {
-    if (!inbox || inbox.method === "web_api" || !selectedMessages.length)
+    if (messageDeleting || !inbox || inbox.method === "web_api" || !selectedMessages.length)
       return;
     const targets = inbox.messages.filter((item) =>
       selectedMessages.includes(mailKey(item)),
     );
     const targetKeys = new Set(targets.map(mailKey));
+    setMessageDeleting(true);
     targetKeys.forEach((key) => deletingMessages.current.add(key));
     setInbox((current) => current ? { ...current, messages: current.messages.filter((item) => !targetKeys.has(mailKey(item))) } : current);
     setSelectedMessages([]);
@@ -944,6 +948,7 @@ export default function AccountDetailPage({
 	  setNotice(`批量删除邮件失败：${errorText(e)}`);
 	} finally {
       targetKeys.forEach((key) => deletingMessages.current.delete(key));
+      setMessageDeleting(false);
     }
   };
   const toggleAlias = async (item: Alias) => {
@@ -2895,7 +2900,7 @@ export default function AccountDetailPage({
           </div>
           <div className="dialog-actions">
             <button className="button secondary" onClick={() => setMessageDeleteConfirm(false)}>取消</button>
-            <button className="button danger" disabled={busy} onClick={deleteMessage}>{busy ? "删除中…" : "确认删除"}</button>
+            <button className="button danger" disabled={messageDeleting} onClick={deleteMessage}>{messageDeleting ? "删除中…" : "确认删除"}</button>
           </div>
         </div>
       </Dialog>
@@ -2914,7 +2919,7 @@ export default function AccountDetailPage({
           </div>
           <div className="dialog-actions">
             <button className="button secondary" onClick={() => setMessageBatchDeleteConfirm(false)}>取消</button>
-            <button className="button danger" disabled={busy} onClick={deleteSelectedMessages}>{busy ? "删除中…" : "确认删除"}</button>
+              <button className="button danger" disabled={messageDeleting} onClick={deleteSelectedMessages}>{messageDeleting ? "删除中…" : "确认删除"}</button>
           </div>
         </div>
       </Dialog>
