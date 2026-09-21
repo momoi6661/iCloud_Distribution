@@ -711,7 +711,7 @@ export default function AccountDetailPage({
   }, [activeAliases]);
   useEffect(() => {
     setAliasPage(1);
-  }, [aliases, groupFilter, metadata, query, tab]);
+  }, [groupFilter, query, tab]);
   useEffect(() => {
     setSelectedActive([]);
     setSelectedDisabled([]);
