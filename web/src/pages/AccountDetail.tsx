@@ -439,7 +439,17 @@ export default function AccountDetailPage({
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedAlias = searchParams.get("alias") || "";
-  const requestedTab = searchParams.get("tab");
+  const requestedTabValue = searchParams.get("tab");
+  const requestedTab: Tab =
+    requestedTabValue === "disabled" ||
+    requestedTabValue === "inbox" ||
+    requestedTabValue === "shares"
+      ? requestedTabValue
+      : "aliases";
+  const requestedAliasPage = Math.max(
+    1,
+    Number.parseInt(searchParams.get("page") || "1", 10) || 1,
+  );
   const [account, setAccount] = useState<Account | null>(null);
   const [aliases, setAliases] = useState<Alias[]>([]);
   const [shares, setShares] = useState<ShareLink[]>([]);
@@ -451,9 +461,7 @@ export default function AccountDetailPage({
   const [metadata, setMetadata] = useState<Record<string, AliasMetadata>>({});
   const [aliasesLoading, setAliasesLoading] = useState(true);
   const [newAliasGroupId, setNewAliasGroupId] = useState("");
-  const [tab, setTab] = useState<Tab>(
-    requestedTab === "inbox" ? "inbox" : "aliases",
-  );
+  const [tab, setTab] = useState<Tab>(requestedTab);
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState(requestedAlias);
   const [mailMethod, setMailMethod] = useState<MailReadPreference>("web_api");
@@ -465,7 +473,7 @@ export default function AccountDetailPage({
   });
   const [label, setLabel] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
-  const [aliasPage, setAliasPage] = useState(1);
+  const [aliasPage, setAliasPage] = useState(requestedAliasPage);
   const [selectedActive, setSelectedActive] = useState<string[]>([]);
   const [selectedDisabled, setSelectedDisabled] = useState<string[]>([]);
   const [activeDeleteConfirm, setActiveDeleteConfirm] = useState(false);
@@ -602,6 +610,18 @@ export default function AccountDetailPage({
         if (request === inboxRequest.current) setBusy(false);
       });
   }, [account?.id, account?.mail_read_method, id, requestedAlias, requestedTab]);
+  useEffect(() => {
+    if (requestedTab === "inbox") return;
+    inboxRequest.current += 1;
+    messageRequest.current += 1;
+    setTab(requestedTab);
+    setAlias("");
+    setInbox(null);
+    setMessage(null);
+    setMessageError("");
+    setMessageLoading(false);
+    setAliasPage(requestedAliasPage);
+  }, [requestedAliasPage, requestedTab]);
   const groupNames = useMemo(
     () => Object.fromEntries(groups.map((group) => [group.id, group.name])),
     [groups],
@@ -711,7 +731,7 @@ export default function AccountDetailPage({
   }, [activeAliases]);
   useEffect(() => {
     setAliasPage(1);
-  }, [groupFilter, query, tab]);
+  }, [groupFilter, query]);
   useEffect(() => {
     setSelectedActive([]);
     setSelectedDisabled([]);
@@ -733,6 +753,22 @@ export default function AccountDetailPage({
       ),
     );
   }, [filteredShares]);
+  useEffect(() => {
+    if (tab === "inbox" || requestedTab !== tab) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", tab);
+    next.delete("alias");
+    next.delete("from");
+    next.delete("fromPage");
+    if ((tab === "aliases" || tab === "disabled") && aliasPage > 1) {
+      next.set("page", String(aliasPage));
+    } else {
+      next.delete("page");
+    }
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [aliasPage, requestedTab, searchParams, setSearchParams, tab]);
   useEffect(() => {
     if (!notice) return undefined;
     const timer = window.setTimeout(() => setNotice(""), 4200);
@@ -792,6 +828,19 @@ export default function AccountDetailPage({
     requestedPage = 1,
     selectedDays: MailRangeDays = mailRangeDays,
   ) => {
+    if (requestedTab !== "inbox" || requestedAlias !== selectedAlias) {
+      const next = new URLSearchParams();
+      next.set("tab", "inbox");
+      if (selectedAlias) next.set("alias", selectedAlias);
+      if (tab !== "inbox") {
+        next.set("from", tab);
+        if ((tab === "aliases" || tab === "disabled") && aliasPage > 1) {
+          next.set("fromPage", String(aliasPage));
+        }
+      }
+      setSearchParams(next);
+      return;
+    }
     const request = ++inboxRequest.current;
     messageRequest.current += 1;
     setMessage(null);
@@ -802,10 +851,6 @@ export default function AccountDetailPage({
     setAlias(selectedAlias);
     setInboxPage(requestedPage);
     setTab("inbox");
-    setSearchParams(
-      selectedAlias ? { tab: "inbox", alias: selectedAlias } : { tab: "inbox" },
-      { replace: true },
-    );
     setBusy(true);
     try {
       const normalized = normalizeInbox(
@@ -822,6 +867,28 @@ export default function AccountDetailPage({
     } finally {
       if (request === inboxRequest.current) setBusy(false);
     }
+  };
+  const openDetailTab = (nextTab: Exclude<Tab, "inbox">) => {
+    const next = new URLSearchParams();
+    next.set("tab", nextTab);
+    setSearchParams(next);
+  };
+  const returnFromInbox = () => {
+    const fromValue = searchParams.get("from");
+    const fromTab: Exclude<Tab, "inbox"> =
+      fromValue === "disabled" || fromValue === "shares"
+        ? fromValue
+        : "aliases";
+    const fromPage = Math.max(
+      1,
+      Number.parseInt(searchParams.get("fromPage") || "1", 10) || 1,
+    );
+    const next = new URLSearchParams();
+    next.set("tab", fromTab);
+    if ((fromTab === "aliases" || fromTab === "disabled") && fromPage > 1) {
+      next.set("page", String(fromPage));
+    }
+    setSearchParams(next, { replace: true });
   };
   const refreshInbox = async (
     selectedAlias = alias,
@@ -1645,10 +1712,14 @@ export default function AccountDetailPage({
       <section className="detail-hero panel">
         <button
           className="back-link"
-          onClick={() =>
-            navigate(account?.status === "disabled" ? "/disabled" : "/")
-          }
-          aria-label="返回账号列表"
+          onClick={() => {
+            if (tab === "inbox") {
+              returnFromInbox();
+              return;
+            }
+            navigate(account?.status === "disabled" ? "/disabled" : "/");
+          }}
+          aria-label={tab === "inbox" ? "返回邮箱列表" : "返回账号列表"}
         >
           <Icon name="back" size={16} />
         </button>
@@ -1729,7 +1800,7 @@ export default function AccountDetailPage({
         <div className="tabs" role="tablist">
           <button
             className={tab === "aliases" ? "active" : ""}
-            onClick={() => setTab("aliases")}
+            onClick={() => openDetailTab("aliases")}
             role="tab"
             aria-selected={tab === "aliases"}
           >
@@ -1738,7 +1809,7 @@ export default function AccountDetailPage({
           </button>
           <button
             className={tab === "disabled" ? "active" : ""}
-            onClick={() => setTab("disabled")}
+            onClick={() => openDetailTab("disabled")}
             role="tab"
             aria-selected={tab === "disabled"}
           >
@@ -1756,7 +1827,7 @@ export default function AccountDetailPage({
           </button>
           <button
             className={tab === "shares" ? "active" : ""}
-            onClick={() => setTab("shares")}
+            onClick={() => openDetailTab("shares")}
             role="tab"
             aria-selected={tab === "shares"}
           >
@@ -1916,7 +1987,7 @@ export default function AccountDetailPage({
               <Pagination
                 page={aliasPage}
                 totalPages={totalPages}
-                onChange={setAliasPage}
+                onChange={(page) => setAliasPage(page)}
                 label="别名分页"
               />
             )}
