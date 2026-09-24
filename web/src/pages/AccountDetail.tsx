@@ -3395,12 +3395,9 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
         {
           mcpServers: {
             "icloud-distribution": {
-              command: "python",
-              args: ["mcp/server.py"],
-              env: {
-                ICLOUD_DISTRIBUTION_URL: window.location.origin,
-                HME_MCP_TOKEN: token,
-              },
+              type: "streamable-http",
+              url: `${window.location.origin}/mcp`,
+              headers: { Authorization: `Bearer ${token}` },
             },
           },
         },
@@ -3430,7 +3427,7 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
         <div className="mcp-codex-config-heading">
           <div>
             <span className="eyebrow">Codex 配置</span>
-            <strong>复制到项目根目录 .mcp.json</strong>
+            <strong>复制到 Agent 的 .mcp.json</strong>
           </div>
           <button
             type="button"
@@ -3445,7 +3442,7 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
           </button>
         </div>
         <pre>{codexConfig}</pre>
-        <small>复制后重启 Codex。Token 只绑定当前账号，重新生成后旧配置会失效。</small>
+        <small>这是远程 MCP 配置，复制后交给 Codex 或其他 Agent 使用。Token 只绑定当前账号，重新生成后旧配置会失效。</small>
       </div>
       {createdAt && <small className="field-help">生成时间：{createdAt}</small>}
       {error && <div className="form-error" role="alert">{error}</div>}

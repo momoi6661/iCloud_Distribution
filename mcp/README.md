@@ -1,7 +1,7 @@
 # 项目级 FastMCP
 
-这个 MCP 服务是 iCloud Distribution 的控制入口，复用项目已有的 HTTP API。
-它默认使用 STDIO，适合在项目目录中被 MCP 客户端按需启动；不会直接读取 `data/accounts.json`，也不会把 IMAP 密码、App 密码或 Cookie 返回给工具调用方。
+这个 MCP 服务是 iCloud Distribution 的远程 Agent 控制入口，复用项目已有的 HTTP API。
+线上通过 `https://icloud.riria.org/mcp` 提供 Streamable HTTP；每个请求使用用户自己的账号级 Bearer Token，不会读取或返回 IMAP 密码、App 密码或 Cookie。
 
 ## 安装
 
@@ -34,12 +34,12 @@ $env:HME_MCP_TOKEN = "mcp_..."
 python mcp/server.py
 ```
 
-项目根目录的 `.codex/config.toml` 是 Codex Agent 的项目级 MCP 配置；`.mcp.json` 保留给兼容的 MCP/插件加载器。Codex 首次使用时需要信任该项目。
+本地开发仍可使用项目根目录的 `.codex/config.toml` 和 STDIO。线上用户直接复制账号面板生成的 `.mcp.json`，其中包含远程 MCP 地址和账号 Token。
 
-需要远程 HTTP MCP 时，再显式运行：
+远程服务由 Docker Compose 启动，不需要用户安装 Python 或运行本地脚本。
 
 ```powershell
-fastmcp run mcp/server.py --transport http --host 127.0.0.1 --port 8787
+MCP_TRANSPORT=streamable-http python mcp/server.py
 ```
 
 不要直接把 HTTP MCP 端口暴露到公网；远程访问应放在已有认证和反向代理之后。

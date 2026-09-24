@@ -11,3 +11,13 @@ services:
       # accounts.json / shares.json 持久化到宿主机 ./data
       - ./data:/app/data
     restart: unless-stopped
+  icloud_mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    container_name: icloud_mcp
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      - icloud_distribution
+    restart: unless-stopped

@@ -12,12 +12,26 @@ from urllib.parse import quote
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
 
 
 BASE_URL = os.getenv("ICLOUD_DISTRIBUTION_URL", "http://127.0.0.1:6981").rstrip("/")
 USERNAME = os.getenv("HME_MCP_USERNAME") or os.getenv("HME_SUPERADMIN_USERNAME", "")
 PASSWORD = os.getenv("HME_MCP_PASSWORD") or os.getenv("HME_SUPERADMIN_PASSWORD", "")
 ACCOUNT_TOKEN = os.getenv("HME_MCP_TOKEN", "").strip()
+MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "stdio")
+
+
+def request_token() -> str:
+    if ACCOUNT_TOKEN:
+        return ACCOUNT_TOKEN
+    try:
+        value = get_http_request().headers.get("authorization", "")
+    except RuntimeError:
+        return ""
+    if value.lower().startswith("bearer "):
+        return value[7:].strip()
+    return ""
 
 
 class ProjectAPI:
@@ -28,7 +42,7 @@ class ProjectAPI:
     def _login(self) -> None:
         if self.authenticated:
             return
-        if ACCOUNT_TOKEN:
+        if request_token():
             self.authenticated = True
             return
         if not USERNAME or not PASSWORD:
@@ -44,15 +58,15 @@ class ProjectAPI:
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         self._login()
         headers = dict(kwargs.pop("headers", {}) or {})
-        if ACCOUNT_TOKEN:
-            headers["Authorization"] = f"Bearer {ACCOUNT_TOKEN}"
+        if request_token():
+            headers["Authorization"] = f"Bearer {request_token()}"
         kwargs["headers"] = headers
         response = self.client.request(method, path, **kwargs)
         try:
             reason = response.json().get("data", {}).get("reason")
         except (ValueError, AttributeError):
             reason = None
-        if response.status_code == 401 and reason == "ui_auth_expired" and not ACCOUNT_TOKEN:
+        if response.status_code == 401 and reason == "ui_auth_expired" and not request_token():
             self.authenticated = False
             self._login()
             response = self.client.request(method, path, **kwargs)
@@ -222,6 +236,7 @@ def mcp_token_status(account_id: str) -> Any:
 
 
 if __name__ == "__main__":
-    # STDIO is the project default. For a remote deployment, use:
-    # fastmcp run mcp/server.py --transport http --host 127.0.0.1 --port 8787
-    mcp.run()
+    if MCP_TRANSPORT == "streamable-http":
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=8787, path="/mcp")
+    else:
+        mcp.run()
