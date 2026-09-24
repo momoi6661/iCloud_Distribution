@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "icloud-distribution": {
+      "command": "python",
+      "args": ["mcp/server.py"],
+      "env": {
+        "ICLOUD_DISTRIBUTION_URL": "http://127.0.0.1:6981"
+      }
+    }
+  }
+}
