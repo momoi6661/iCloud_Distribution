@@ -3397,7 +3397,6 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
             "icloud-distribution": {
               type: "streamable-http",
               url: `${window.location.origin}/mcp`,
-              headers: { Authorization: `Bearer ${token}` },
             },
           },
         },
@@ -3442,7 +3441,7 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
           </button>
         </div>
         <pre>{codexConfig}</pre>
-        <small>这是远程 MCP 配置，复制后交给 Codex 或其他 Agent 使用。Token 只绑定当前账号，重新生成后旧配置会失效。</small>
+        <small>JSON 只包含远程地址。请单独复制上方 Token，发送给 Agent 作为授权信息。Token 只绑定当前账号，重新生成后旧配置会失效。</small>
       </div>
       {createdAt && <small className="field-help">生成时间：{createdAt}</small>}
       {error && <div className="form-error" role="alert">{error}</div>}
