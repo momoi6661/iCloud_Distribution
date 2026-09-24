@@ -18,6 +18,14 @@ $env:HME_MCP_USERNAME = "liuyuquan"
 $env:HME_MCP_PASSWORD = "你的项目登录密码"
 ```
 
+如果要让 Agent 只访问一个账号，使用该账号生成的 Token：
+
+```powershell
+$env:HME_MCP_TOKEN = "mcp_..."
+```
+
+设置 `HME_MCP_TOKEN` 后，MCP 请求使用账号级 Bearer Token，不再使用项目登录账号；服务端会把所有请求限制到 Token 对应的账号。
+
 也可以使用 `HME_SUPERADMIN_USERNAME` 和 `HME_SUPERADMIN_PASSWORD`，但建议给 MCP 单独使用一组环境变量。
 
 ## 运行

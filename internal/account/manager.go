@@ -5,6 +5,9 @@
 package account
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,28 +24,32 @@ import (
 
 // Account 描述一个 iCloud 账号。
 type Account struct {
-	ID             string                   `json:"id"`
-	OwnerUserID    string                   `json:"owner_user_id,omitempty"`
-	Name           string                   `json:"name"`
-	RealEmail      string                   `json:"real_email"`
-	ICloudEmail    string                   `json:"icloud_email"`
-	Cookies        map[string]string        `json:"cookies,omitempty"`
-	Host           string                   `json:"host"`
-	Proxy          string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
-	AppPassword    string                   `json:"app_password,omitempty"`
-	ForwardIMAP    *ForwardIMAPConfig       `json:"forward_imap,omitempty"`
-	Status         string                   `json:"status"` // active / error
-	AliasTotal     int                      `json:"alias_total"`
-	AliasActive    int                      `json:"alias_active"`
-	LastValidated  string                   `json:"last_validated"`
-	LastError      string                   `json:"last_error,omitempty"`
-	CreatedAt      string                   `json:"created_at"`
-	Groups         []LocalGroup             `json:"groups,omitempty"`
-	AliasMetadata  map[string]AliasMetadata `json:"alias_metadata,omitempty"`
-	HasCookies     bool                     `json:"has_cookies,omitempty"`
-	HasAppPassword bool                     `json:"has_app_password,omitempty"`
-	HasForwardIMAP bool                     `json:"has_forward_imap,omitempty"`
-	MailReadMethod string                   `json:"mail_read_method,omitempty"`
+	ID                string                   `json:"id"`
+	OwnerUserID       string                   `json:"owner_user_id,omitempty"`
+	Name              string                   `json:"name"`
+	RealEmail         string                   `json:"real_email"`
+	ICloudEmail       string                   `json:"icloud_email"`
+	Cookies           map[string]string        `json:"cookies,omitempty"`
+	Host              string                   `json:"host"`
+	Proxy             string                   `json:"proxy,omitempty"` // HTTP/SOCKS5 代理
+	AppPassword       string                   `json:"app_password,omitempty"`
+	ForwardIMAP       *ForwardIMAPConfig       `json:"forward_imap,omitempty"`
+	Status            string                   `json:"status"` // active / error
+	AliasTotal        int                      `json:"alias_total"`
+	AliasActive       int                      `json:"alias_active"`
+	LastValidated     string                   `json:"last_validated"`
+	LastError         string                   `json:"last_error,omitempty"`
+	CreatedAt         string                   `json:"created_at"`
+	Groups            []LocalGroup             `json:"groups,omitempty"`
+	AliasMetadata     map[string]AliasMetadata `json:"alias_metadata,omitempty"`
+	HasCookies        bool                     `json:"has_cookies,omitempty"`
+	HasAppPassword    bool                     `json:"has_app_password,omitempty"`
+	HasForwardIMAP    bool                     `json:"has_forward_imap,omitempty"`
+	MailReadMethod    string                   `json:"mail_read_method,omitempty"`
+	MCPTokenHash      string                   `json:"mcp_token_hash,omitempty"`
+	MCPTokenPrefix    string                   `json:"mcp_token_prefix,omitempty"`
+	MCPTokenCreatedAt string                   `json:"mcp_token_created_at,omitempty"`
+	HasMCPToken       bool                     `json:"has_mcp_token,omitempty"`
 }
 
 func (m *Manager) AssignMissingOwners(ownerID string) error {
@@ -394,6 +401,8 @@ func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
 		cp.HasCookies = len(acc.Cookies) > 0
 		cp.HasAppPassword = strings.TrimSpace(acc.AppPassword) != ""
 		cp.HasForwardIMAP = acc.ForwardIMAP != nil && strings.TrimSpace(acc.ForwardIMAP.Password) != ""
+		cp.HasMCPToken = strings.TrimSpace(acc.MCPTokenHash) != ""
+		cp.MCPTokenHash = ""
 		cp.Cookies = nil
 		cp.AppPassword = ""
 		if acc.ForwardIMAP != nil {
@@ -414,6 +423,76 @@ func (m *Manager) listAccountsLocked(include func(*Account) bool) []*Account {
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+// GenerateMCPToken creates an account-scoped token. Only the returned value is
+// usable; the persisted account record contains a SHA-256 hash only.
+func (m *Manager) GenerateMCPToken(id string) (token, prefix, createdAt string, err error) {
+	raw := make([]byte, 32)
+	if _, err = rand.Read(raw); err != nil {
+		return "", "", "", err
+	}
+	token = "mcp_" + base64.RawURLEncoding.EncodeToString(raw)
+	prefix = token[:12]
+	hash := sha256.Sum256([]byte(token))
+	createdAt = time.Now().UTC().Format(time.RFC3339)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return "", "", "", fmt.Errorf("账号不存在: %s", id)
+	}
+	if acc.Status == statusDisabled {
+		return "", "", "", fmt.Errorf("账号已禁用，请先恢复账号: %s", id)
+	}
+	acc.MCPTokenHash = fmt.Sprintf("%x", hash[:])
+	acc.MCPTokenPrefix = prefix
+	acc.MCPTokenCreatedAt = createdAt
+	if err = m.save(); err != nil {
+		return "", "", "", err
+	}
+	return token, prefix, createdAt, nil
+}
+
+func (m *Manager) RevokeMCPToken(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return fmt.Errorf("账号不存在: %s", id)
+	}
+	acc.MCPTokenHash = ""
+	acc.MCPTokenPrefix = ""
+	acc.MCPTokenCreatedAt = ""
+	return m.save()
+}
+
+func (m *Manager) MCPTokenStatus(id string) (prefix, createdAt string, configured bool, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	acc, ok := m.accounts[id]
+	if !ok {
+		return "", "", false, fmt.Errorf("账号不存在: %s", id)
+	}
+	return acc.MCPTokenPrefix, acc.MCPTokenCreatedAt, strings.TrimSpace(acc.MCPTokenHash) != "", nil
+}
+
+func (m *Manager) AuthenticateMCPToken(token string) (*Account, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, false
+	}
+	hash := sha256.Sum256([]byte(token))
+	want := fmt.Sprintf("%x", hash[:])
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, acc := range m.accounts {
+		if acc.Status != statusDisabled && acc.MCPTokenHash == want {
+			cp := *acc
+			return &cp, true
+		}
+	}
+	return nil, false
 }
 
 // BatchDeactivate disables each existing account and reports per-action counts.

@@ -14,6 +14,13 @@ func (s *Server) ownershipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identity := currentIdentity(c)
 		accountIDs := []string{}
+		mcpAccountID, isMCP := c.Get("mcp_account_id")
+		boundAccountID, _ := mcpAccountID.(string)
+		if isMCP {
+			if boundAccountID != "" {
+				accountIDs = append(accountIDs, boundAccountID)
+			}
+		}
 		if id := strings.TrimSpace(c.Query("account_id")); id != "" {
 			accountIDs = append(accountIDs, id)
 		}
@@ -38,6 +45,11 @@ func (s *Server) ownershipMiddleware() gin.HandlerFunc {
 			}
 		}
 		for _, id := range accountIDs {
+			if isMCP && boundAccountID != "" && id != boundAccountID {
+				fail(c, http.StatusNotFound, "账号不存在")
+				c.Abort()
+				return
+			}
 			owner, ok := s.mgr.Owner(id)
 			// Leave unknown IDs to the handler so normal parameter/not-found
 			// validation remains consistent. Existing accounts, however, must

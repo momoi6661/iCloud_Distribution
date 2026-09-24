@@ -17,6 +17,7 @@ from fastmcp import FastMCP
 BASE_URL = os.getenv("ICLOUD_DISTRIBUTION_URL", "http://127.0.0.1:6981").rstrip("/")
 USERNAME = os.getenv("HME_MCP_USERNAME") or os.getenv("HME_SUPERADMIN_USERNAME", "")
 PASSWORD = os.getenv("HME_MCP_PASSWORD") or os.getenv("HME_SUPERADMIN_PASSWORD", "")
+ACCOUNT_TOKEN = os.getenv("HME_MCP_TOKEN", "").strip()
 
 
 class ProjectAPI:
@@ -26,6 +27,9 @@ class ProjectAPI:
 
     def _login(self) -> None:
         if self.authenticated:
+            return
+        if ACCOUNT_TOKEN:
+            self.authenticated = True
             return
         if not USERNAME or not PASSWORD:
             raise RuntimeError(
@@ -39,12 +43,16 @@ class ProjectAPI:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         self._login()
+        headers = dict(kwargs.pop("headers", {}) or {})
+        if ACCOUNT_TOKEN:
+            headers["Authorization"] = f"Bearer {ACCOUNT_TOKEN}"
+        kwargs["headers"] = headers
         response = self.client.request(method, path, **kwargs)
         try:
             reason = response.json().get("data", {}).get("reason")
         except (ValueError, AttributeError):
             reason = None
-        if response.status_code == 401 and reason == "ui_auth_expired":
+        if response.status_code == 401 and reason == "ui_auth_expired" and not ACCOUNT_TOKEN:
             self.authenticated = False
             self._login()
             response = self.client.request(method, path, **kwargs)
@@ -205,6 +213,12 @@ def set_mail_read_method(account_id: str, method: str) -> Any:
     if method not in {"web_api", "imap", "forward_imap"}:
         raise ValueError("method 必须是 web_api、imap 或 forward_imap")
     return api._request("PUT", _account_path(account_id) + "/mail-read-method", json={"method": method})
+
+
+@mcp.tool
+def mcp_token_status(account_id: str) -> Any:
+    """查看指定账号的 MCP Token 状态，不返回完整 Token。"""
+    return api._request("GET", _account_path(account_id) + "/mcp-token")
 
 
 if __name__ == "__main__":

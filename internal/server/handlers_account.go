@@ -10,6 +10,19 @@ import (
 )
 
 func (s *Server) listAccounts(c *gin.Context) {
+	if accountID, present := c.Get("mcp_account_id"); present {
+		if id, valid := accountID.(string); valid && id != "" {
+			identity := currentIdentity(c)
+			for _, item := range s.mgr.ListAccountsFor(identity.ID, false) {
+				if item.ID == id {
+					ok(c, []*account.Account{item})
+					return
+				}
+			}
+			ok(c, []*account.Account{})
+			return
+		}
+	}
 	identity := currentIdentity(c)
 	ok(c, s.mgr.ListAccountsFor(identity.ID, false))
 }
@@ -267,6 +280,32 @@ func (s *Server) setAppPassword(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"id": id, "icloud_email": req.ICloudEmail})
+}
+
+func (s *Server) getMCPToken(c *gin.Context) {
+	prefix, createdAt, configured, err := s.mgr.MCPTokenStatus(c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	ok(c, gin.H{"configured": configured, "prefix": prefix, "created_at": createdAt})
+}
+
+func (s *Server) createMCPToken(c *gin.Context) {
+	token, prefix, createdAt, err := s.mgr.GenerateMCPToken(c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"token": token, "prefix": prefix, "created_at": createdAt, "warning": "请立即复制，之后不会再次返回完整 Token"})
+}
+
+func (s *Server) revokeMCPToken(c *gin.Context) {
+	if err := s.mgr.RevokeMCPToken(c.Param("id")); err != nil {
+		fail(c, http.StatusNotFound, err.Error())
+		return
+	}
+	ok(c, gin.H{"id": c.Param("id"), "configured": false})
 }
 
 type setForwardIMAPReq struct {

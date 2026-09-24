@@ -5,8 +5,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"icloud_distribution/internal/auth"
 	"icloud_distribution/internal/hme"
 )
 
@@ -21,6 +23,22 @@ import (
 // 不应把用户踢出 UI 会话。
 func (s *Server) uiMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if authHeader := strings.TrimSpace(c.GetHeader("Authorization")); strings.HasPrefix(authHeader, "Bearer ") {
+			account, valid := s.mgr.AuthenticateMCPToken(strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer ")))
+			if !valid || account.OwnerUserID == "" {
+				c.JSON(http.StatusUnauthorized, apiResp{Success: false, Message: "MCP Token 无效或已撤销"})
+				c.Abort()
+				return
+			}
+			role := "user"
+			if account.OwnerUserID == auth.SuperadminID {
+				role = "superadmin"
+			}
+			c.Set("ui_identity", auth.Identity{ID: account.OwnerUserID, Username: "mcp:" + account.MCPTokenPrefix, Role: role})
+			c.Set("mcp_account_id", account.ID)
+			c.Next()
+			return
+		}
 		identity, valid := s.ui.Identity(c.Request)
 		if !valid {
 			c.JSON(http.StatusUnauthorized, apiResp{

@@ -210,6 +210,9 @@ export const api = {
 
   setAppPassword: (id: string, icloudEmail: string, appPassword: string) => request('POST', `/api/accounts/${id}/password`, { icloud_email: icloudEmail, app_password: appPassword }),
   getAppPassword: (id: string) => request<{ icloud_email: string; app_password: string; configured: boolean }>('GET', `/api/accounts/${id}/password`),
+  getMCPToken: (id: string) => request<{ configured: boolean; prefix?: string; created_at?: string }>('GET', `/api/accounts/${id}/mcp-token`),
+  createMCPToken: (id: string) => request<{ token: string; prefix: string; created_at: string; warning: string }>('POST', `/api/accounts/${id}/mcp-token`),
+  revokeMCPToken: (id: string) => request('DELETE', `/api/accounts/${id}/mcp-token`),
   updateCookies: (id: string, cookies: Record<string, string>) => request('PUT', `/api/accounts/${id}/cookies`, { cookies }),
 
   loginStart: (id: string, password: string) => request<LoginStartResult>('POST', `/api/accounts/${id}/login/start`, { password }),

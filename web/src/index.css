@@ -551,6 +551,12 @@ h1, h2, h3, strong { font-weight: 650; }
 .mail-config-method-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mail-config-method-row strong { color: var(--text-2); font-size: 13px; }
 .mail-config-save { min-height: 36px; padding-inline: 12px; }
+.mcp-token-panel { display: grid; gap: 10px; margin: 20px 24px 0; padding: 16px 0 0; border-top: 1px solid var(--line-soft); }
+.mcp-token-panel .form-intro { margin: 0; }
+.mcp-token-result { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px; background: var(--ink-900); border: 1px solid var(--line); border-radius: 6px; }
+.mcp-token-result code { flex: 1; min-width: 0; overflow: auto; color: var(--mint); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
+.field-help { color: var(--text-4); font-size: 11px; }
+.mcp-token-actions { margin-top: 0; justify-content: flex-start; }
 
 @media (max-width: 1320px) {
   .detail-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; }
@@ -566,6 +572,7 @@ h1, h2, h3, strong { font-weight: 650; }
   .mail-config-trigger { width: 100%; }
   .mail-config-tabs { margin-inline: 16px; }
   .mail-config-summary, .mail-config-method { margin-inline: 16px; }
+  .mcp-token-panel { margin-inline: 16px; }
   .mail-config-method-row { align-items: flex-start; flex-direction: column; }
   .mail-config-save { align-self: flex-start; }
   .share-toolbar { align-items: stretch; flex-direction: column; padding-inline: 16px; }

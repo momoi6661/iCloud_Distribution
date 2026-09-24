@@ -2485,6 +2485,7 @@ export default function AccountDetailPage({
               }}
             />
           )}
+          <MCPTokenForm accountId={id} onNotice={setNotice} />
         </div>
       </SidePanel>
       <SidePanel
@@ -3314,5 +3315,84 @@ function AppPasswordForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (message: string) => void }) {
+  const [configured, setConfigured] = useState(false);
+  const [prefix, setPrefix] = useState("");
+  const [createdAt, setCreatedAt] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    try {
+      const result = await api.getMCPToken(accountId);
+      setConfigured(result.configured);
+      setPrefix(result.prefix || "");
+      setCreatedAt(result.created_at || "");
+    } catch (caught) {
+      setError(errorText(caught));
+    }
+  };
+  useEffect(() => { void load(); }, [accountId]);
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.createMCPToken(accountId);
+      setToken(result.token);
+      setConfigured(true);
+      setPrefix(result.prefix);
+      setCreatedAt(result.created_at);
+      onNotice("MCP Token 已生成，请立即复制保存。");
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const revoke = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.revokeMCPToken(accountId);
+      setToken("");
+      setConfigured(false);
+      setPrefix("");
+      setCreatedAt("");
+      onNotice("MCP Token 已撤销。");
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="mcp-token-panel" aria-label="MCP Token">
+      <div className="mail-config-method-row">
+        <div>
+          <span className="eyebrow">Agent 访问</span>
+          <strong>MCP Token</strong>
+        </div>
+        <span className={`health-value ${configured ? "ready" : "pending"}`}>
+          {configured ? `已配置 · ${prefix}` : "未配置"}
+        </span>
+      </div>
+      <p className="form-intro">给 Codex 或其他 Agent 使用，只能访问当前邮箱账号。生成后完整 Token 只显示一次。</p>
+      {token && (
+        <div className="mcp-token-result">
+          <code>{token}</code>
+          <button type="button" className="button small secondary" onClick={() => { void navigator.clipboard.writeText(token); onNotice("MCP Token 已复制。"); }}>复制</button>
+        </div>
+      )}
+      {createdAt && <small className="field-help">生成时间：{createdAt}</small>}
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <div className="drawer-actions mcp-token-actions">
+        <button type="button" className="button primary" disabled={busy} onClick={() => void generate()}>{busy ? "处理中…" : configured ? "重新生成" : "生成 Token"}</button>
+        {configured && <button type="button" className="button danger" disabled={busy} onClick={() => void revoke()}>撤销</button>}
+      </div>
+    </section>
   );
 }
