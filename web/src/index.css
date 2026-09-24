@@ -555,6 +555,12 @@ h1, h2, h3, strong { font-weight: 650; }
 .mcp-token-panel .form-intro { margin: 0; }
 .mcp-token-result { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px; background: var(--ink-900); border: 1px solid var(--line); border-radius: 6px; }
 .mcp-token-result code { flex: 1; min-width: 0; overflow: auto; color: var(--mint); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
+.mcp-codex-config { display: grid; gap: 8px; padding: 14px; background: var(--ink-900); border: 1px solid var(--line-soft); border-radius: 6px; }
+.mcp-codex-config-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mcp-codex-config-heading > div { display: grid; gap: 4px; min-width: 0; }
+.mcp-codex-config-heading strong { color: var(--text-2); font-size: 12px; }
+.mcp-codex-config pre { margin: 0; padding: 12px; overflow: auto; color: var(--mint); background: var(--ink-950); border: 1px solid var(--line-soft); border-radius: 4px; font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
+.mcp-codex-config small { color: var(--text-4); font-size: 11px; line-height: 1.5; }
 .field-help { color: var(--text-4); font-size: 11px; }
 .mcp-token-actions { margin-top: 0; justify-content: flex-start; }
 

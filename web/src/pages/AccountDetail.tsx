@@ -3390,6 +3390,24 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
       setBusy(false);
     }
   };
+  const codexConfig = token
+    ? JSON.stringify(
+        {
+          mcpServers: {
+            "icloud-distribution": {
+              command: "python",
+              args: ["mcp/server.py"],
+              env: {
+                ICLOUD_DISTRIBUTION_URL: window.location.origin,
+                HME_MCP_TOKEN: token,
+              },
+            },
+          },
+        },
+        null,
+        2,
+      )
+    : "生成 Token 后，这里会显示可直接复制到 Codex 项目里的 JSON 配置。";
   return (
     <section className="mcp-token-panel" aria-label="MCP Token">
       <div className="mail-config-method-row">
@@ -3408,6 +3426,27 @@ function MCPTokenForm({ accountId, onNotice }: { accountId: string; onNotice: (m
           <button type="button" className="button small secondary" onClick={() => { void navigator.clipboard.writeText(token); onNotice("MCP Token 已复制。"); }}>复制</button>
         </div>
       )}
+      <div className="mcp-codex-config">
+        <div className="mcp-codex-config-heading">
+          <div>
+            <span className="eyebrow">Codex 配置</span>
+            <strong>复制到项目根目录 .mcp.json</strong>
+          </div>
+          <button
+            type="button"
+            className="button small secondary"
+            disabled={!token}
+            onClick={() => {
+              void navigator.clipboard.writeText(codexConfig);
+              onNotice("Codex MCP 配置已复制。");
+            }}
+          >
+            复制配置
+          </button>
+        </div>
+        <pre>{codexConfig}</pre>
+        <small>复制后重启 Codex。Token 只绑定当前账号，重新生成后旧配置会失效。</small>
+      </div>
       {createdAt && <small className="field-help">生成时间：{createdAt}</small>}
       {error && <div className="form-error" role="alert">{error}</div>}
       <div className="drawer-actions mcp-token-actions">
