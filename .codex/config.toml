@@ -1,0 +1,11 @@
+# Project-level MCP configuration for Codex Agent.
+# The project must be trusted before Codex loads this file.
+
+[mcp_servers.icloud-distribution]
+command = "python"
+args = ["mcp/server.py"]
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.icloud-distribution.env]
+ICLOUD_DISTRIBUTION_URL = "http://127.0.0.1:6981"

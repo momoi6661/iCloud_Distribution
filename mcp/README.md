@@ -26,7 +26,9 @@ $env:HME_MCP_PASSWORD = "你的项目登录密码"
 python mcp/server.py
 ```
 
-项目根目录的 `.mcp.json` 已提供客户端配置。需要远程 HTTP MCP 时，再显式运行：
+项目根目录的 `.codex/config.toml` 是 Codex Agent 的项目级 MCP 配置；`.mcp.json` 保留给兼容的 MCP/插件加载器。Codex 首次使用时需要信任该项目。
+
+需要远程 HTTP MCP 时，再显式运行：
 
 ```powershell
 fastmcp run mcp/server.py --transport http --host 127.0.0.1 --port 8787
