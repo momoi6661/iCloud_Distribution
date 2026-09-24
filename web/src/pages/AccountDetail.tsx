@@ -493,6 +493,7 @@ export default function AccountDetailPage({
   const [batchNote, setBatchNote] = useState("");
   const [batchResult, setBatchResult] = useState<BatchCreateResult | null>(null);
   const [mailConfigOpen, setMailConfigOpen] = useState(false);
+  const [mcpTokenOpen, setMcpTokenOpen] = useState(false);
   const [mailConfigTab, setMailConfigTab] = useState<"imap" | "forward_imap">("imap");
   const [organizerOpen, setOrganizerOpen] = useState(false);
   const [editorAlias, setEditorAlias] = useState<Alias | null>(null);
@@ -1756,6 +1757,13 @@ export default function AccountDetailPage({
             <Icon name="settings" size={15} />
             邮件读取配置
           </button>
+          <button
+            className="button small secondary mcp-token-trigger"
+            onClick={() => setMcpTokenOpen(true)}
+          >
+            <Icon name="settings" size={15} />
+            Agent MCP
+          </button>
         </div>
       </section>
       {mailMethodNotice && <div className="inline-banner">{mailMethodNotice}</div>}
@@ -2485,6 +2493,19 @@ export default function AccountDetailPage({
               }}
             />
           )}
+        </div>
+      </SidePanel>
+      <SidePanel
+        open={mcpTokenOpen}
+        title="Agent MCP"
+        onClose={() => setMcpTokenOpen(false)}
+      >
+        <div className="mcp-token-panel mcp-token-drawer">
+          <div className="mail-config-summary">
+            <span className="eyebrow">当前账号</span>
+            <strong>{account?.name}</strong>
+            <span className="mono">{account?.real_email || account?.icloud_email}</span>
+          </div>
           <MCPTokenForm accountId={id} onNotice={setNotice} />
         </div>
       </SidePanel>
