@@ -454,6 +454,7 @@ export default function AccountDetailPage({
   const [aliases, setAliases] = useState<Alias[]>([]);
   const [shares, setShares] = useState<ShareLink[]>([]);
   const [inbox, setInbox] = useState<InboxData | null>(null);
+  const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxCount, setInboxCount] = useState<number | null>(null);
   const [inboxPage, setInboxPage] = useState(1);
   const [inboxQuery, setInboxQuery] = useState("");
@@ -591,6 +592,7 @@ export default function AccountDetailPage({
     setTab("inbox");
     setAlias(requestedAlias);
     setInboxCount(cachedInboxCount(id, requestedAlias));
+    setInboxLoading(true);
     setBusy(true);
     api
       .inbox(id, requestedAlias, 20, 7, account.mail_read_method || mailMethod, 1)
@@ -609,6 +611,7 @@ export default function AccountDetailPage({
       })
       .finally(() => {
         if (request === inboxRequest.current) setBusy(false);
+        if (request === inboxRequest.current) setInboxLoading(false);
       });
   }, [account?.id, account?.mail_read_method, id, requestedAlias, requestedTab]);
   useEffect(() => {
@@ -618,6 +621,7 @@ export default function AccountDetailPage({
     setTab(requestedTab);
     setAlias("");
     setInbox(null);
+    setInboxLoading(false);
     setMessage(null);
     setMessageError("");
     setMessageLoading(false);
@@ -848,6 +852,7 @@ export default function AccountDetailPage({
     setMessageError("");
     setMessageLoading(false);
     setInbox(null);
+    setInboxLoading(true);
     setInboxCount(cachedInboxCount(id, selectedAlias));
     setAlias(selectedAlias);
     setInboxPage(requestedPage);
@@ -867,6 +872,7 @@ export default function AccountDetailPage({
       if (request === inboxRequest.current) setNotice((e as Error).message);
     } finally {
       if (request === inboxRequest.current) setBusy(false);
+      if (request === inboxRequest.current) setInboxLoading(false);
     }
   };
   const openDetailTab = (nextTab: Exclude<Tab, "inbox">) => {
@@ -918,7 +924,7 @@ export default function AccountDetailPage({
   };
   useEffect(() => {
     localStorage.setItem("mail-auto-refresh-ms", String(autoRefreshMs));
-    if (tab !== "inbox" || autoRefreshMs === 0) return undefined;
+    if (tab !== "inbox" || autoRefreshMs === 0 || inboxLoading) return undefined;
     let timer: number | undefined;
     let cancelled = false;
     const schedule = () => {
@@ -932,7 +938,7 @@ export default function AccountDetailPage({
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [alias, autoRefreshMs, inboxPage, mailMethod, mailRangeDays, tab]);
+  }, [alias, autoRefreshMs, inboxLoading, inboxPage, mailMethod, mailRangeDays, tab]);
   const openMessage = async (item: MailMessage) => {
     const request = ++messageRequest.current;
     setMessage({ ...item, body: "", content_type: "" });
@@ -2068,9 +2074,9 @@ export default function AccountDetailPage({
             )}
             {!inbox || !inbox.messages?.length ? (
               <div className="empty-state small-empty">
-                <h3>{busy ? "正在读取邮件…" : "这段时间没有新邮件。"}</h3>
+                <h3>{inboxLoading ? "正在读取邮件…" : "这段时间没有新邮件。"}</h3>
                 <p>
-                  {busy
+                  {inboxLoading
                     ? "仅加载标题、发件人与时间，请稍候。"
                     : "最近 7 天收到的邮件会显示在这里。"}
                 </p>
